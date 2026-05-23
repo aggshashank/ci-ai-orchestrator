@@ -1,0 +1,74 @@
+"""
+Fraud Risk Agent
+----------------
+Analyses address mismatch, velocity indicators, and anomaly signals.
+"""
+import json
+import time
+import structlog
+from agents.state import GraphState
+from llm_provider import get_llm
+
+logger = structlog.get_logger()
+
+FRAUD_PROMPT = """\
+You are a fraud analyst for a fintech company. Analyze this application for fraud risk.
+
+Application signals:
+- Address Mismatch: {address_mismatch} (billing address does not match bureau records)
+- Delinquency Count: {delinquencies} (recent late payments, possible identity theft signal)
+- Application Channel: {channel}
+
+Return ONLY a JSON object with exactly these fields:
+{{
+  "fraudRisk": "HIGH" or "MEDIUM" or "LOW",
+  "reason": "one sentence explanation",
+  "indicators": ["list", "of", "specific", "risk", "signals"],
+  "recommendAction": "PROCEED" or "MANUAL_REVIEW" or "DECLINE"
+}}
+
+Rules:
+- fraudRisk HIGH if: address_mismatch is true AND delinquencies >= 2
+- fraudRisk MEDIUM if: address_mismatch is true OR delinquencies >= 1
+- fraudRisk LOW if: address_mismatch is false AND delinquencies == 0
+- recommendAction DECLINE only if fraudRisk HIGH and strong indicators
+"""
+
+
+def fraud_agent(state: GraphState) -> dict:
+    start = time.time()
+    app = state["application"]
+    corr = state["correlation_id"]
+
+    logger.info("fraud_agent start", correlation_id=corr,
+                address_mismatch=app.addressMismatch)
+
+    prompt = FRAUD_PROMPT.format(
+        address_mismatch=str(app.addressMismatch).lower(),
+        delinquencies=app.delinquencies or 0,
+        channel=app.channel or "WEB",
+    )
+
+    try:
+        llm = get_llm()
+        raw = llm.invoke(prompt)
+        result = json.loads(raw)
+
+        required = {"fraudRisk", "reason", "indicators", "recommendAction"}
+        if not required.issubset(result.keys()):
+            raise ValueError(f"Missing fields: {required - result.keys()}")
+
+        latency = round(time.time() - start, 2)
+        logger.info("fraud_agent complete", correlation_id=corr,
+                    fraud_risk=result["fraudRisk"], latency_s=latency)
+        return {"fraud_result": result}
+
+    except Exception as e:
+        logger.error("fraud_agent failed — using fallback",
+                     correlation_id=corr, error=str(e))
+        return {"fraud_result": {
+            "fraudRisk": "MEDIUM",
+            "reason": f"Fraud agent error — fallback applied: {str(e)}",
+            "indicators": ["agent_error_fallback"],
+            "recommendAction": "MANUAL_REVIEW",
+        }}

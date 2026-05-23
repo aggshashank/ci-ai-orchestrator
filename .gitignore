@@ -1,0 +1,31 @@
+# Python
+ai-orchestrator/venv/
+ai-orchestrator/__pycache__/
+ai-orchestrator/**/__pycache__/
+ai-orchestrator/*.pyc
+ai-orchestrator/.env              # contains secrets — never commit
+ai-orchestrator/audit_log.jsonl   # runtime data
+ai-orchestrator/qdrant_data/      # vector DB data
+
+# Java / Maven
+decision-api/target/
+decision-api/*.jar
+decision-api/.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+qdrant_storage/
+
+# Logs
+*.log
+logs/
+ai-orchestrator/.env
