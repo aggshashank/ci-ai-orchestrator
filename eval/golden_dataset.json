@@ -1,0 +1,222 @@
+[
+  {
+    "id": "GD-001",
+    "scenario": "clear_approve_excellent_profile",
+    "description": "High credit score, low utilization, no fraud signals — unambiguous APPROVE",
+    "tier": "approve",
+    "application": {
+      "name": "Alice Chen",
+      "creditScore": 790,
+      "utilization": 18.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "annualIncome": 95000,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW",  "score_max": 0.25 },
+      "fraud_agent":  { "fraudRisk": "LOW",  "recommendAction": "PROCEED" },
+      "policy_rag_agent": { "action": "APPROVE", "policy_applicable": false },
+      "risk_decision": { "recommendation": "APPROVE", "confidence_min": 0.65 },
+      "explainability": {
+        "adverse_action_codes_expected": [],
+        "summary_must_not_contain": ["decline", "manual review", "concern"]
+      }
+    }
+  },
+  {
+    "id": "GD-002",
+    "scenario": "clear_decline_very_low_score",
+    "description": "Credit score below 580 — automatic decline per policy",
+    "tier": "decline",
+    "application": {
+      "name": "Bob Kumar",
+      "creditScore": 510,
+      "utilization": 55.0,
+      "addressMismatch": false,
+      "delinquencies": 2,
+      "channel": "MOBILE"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH", "score_min": 0.75 },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision": { "recommendation": "DECLINE", "confidence_min": 0.70 },
+      "explainability": {
+        "adverse_action_codes_expected": ["AA01"],
+        "summary_must_contain": []
+      }
+    }
+  },
+  {
+    "id": "GD-003",
+    "scenario": "manual_review_high_utilization_address_mismatch",
+    "description": "Utilization >80% AND address mismatch — policy mandates MANUAL_REVIEW",
+    "tier": "manual_review",
+    "application": {
+      "name": "Carol Davis",
+      "creditScore": 680,
+      "utilization": 83.0,
+      "addressMismatch": true,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "policy_rag_agent": { "action": "MANUAL_REVIEW", "policy_applicable": true },
+      "risk_decision": { "recommendation": "MANUAL_REVIEW", "confidence_min": 0.40 },
+      "explainability": {
+        "adverse_action_codes_expected": ["AA04", "AA07"],
+        "summary_must_not_contain": ["approve immediately"]
+      }
+    }
+  },
+  {
+    "id": "GD-004",
+    "scenario": "clear_decline_all_high_signals",
+    "description": "All three risk signals HIGH — automatic decline",
+    "tier": "decline",
+    "application": {
+      "name": "Dan Patel",
+      "creditScore": 320,
+      "utilization": 98.0,
+      "addressMismatch": true,
+      "delinquencies": 4,
+      "channel": "PARTNER"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH", "score_min": 0.90 },
+      "fraud_agent":  { "fraudRisk": "HIGH" },
+      "risk_decision": { "recommendation": "DECLINE", "confidence_min": 0.80 },
+      "explainability": {
+        "adverse_action_codes_expected": ["AA01", "AA04", "AA07", "AA09"],
+        "summary_must_not_contain": ["approve"]
+      }
+    }
+  },
+  {
+    "id": "GD-005",
+    "scenario": "borderline_score_no_fraud",
+    "description": "Score in review band (580-669), no fraud — MANUAL_REVIEW expected",
+    "tier": "manual_review",
+    "application": {
+      "name": "Eve Santos",
+      "creditScore": 612,
+      "utilization": 45.0,
+      "addressMismatch": false,
+      "delinquencies": 1,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision": { "recommendation": "MANUAL_REVIEW" },
+      "explainability": {
+        "adverse_action_codes_expected": ["AA09"],
+        "summary_must_not_contain": []
+      }
+    }
+  },
+  {
+    "id": "GD-006",
+    "scenario": "excellent_score_high_utilization",
+    "description": "Very high credit score but utilization 75% — borderline, likely MANUAL_REVIEW",
+    "tier": "manual_review",
+    "application": {
+      "name": "Frank Lee",
+      "creditScore": 760,
+      "utilization": 76.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision": { "recommendation": "MANUAL_REVIEW" },
+      "explainability": {
+        "adverse_action_codes_expected": ["AA04"],
+        "summary_must_not_contain": []
+      }
+    }
+  },
+  {
+    "id": "GD-007",
+    "scenario": "threshold_exact_credit_score_580",
+    "description": "Credit score exactly at decline threshold — edge case",
+    "tier": "manual_review",
+    "application": {
+      "name": "Grace Wu",
+      "creditScore": 580,
+      "utilization": 30.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "risk_decision": { "recommendation": "MANUAL_REVIEW" },
+      "explainability": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-008",
+    "scenario": "fraud_high_address_mismatch_delinquencies",
+    "description": "Address mismatch + delinquencies — fraud HIGH regardless of credit score",
+    "tier": "manual_review",
+    "application": {
+      "name": "Harry Chen",
+      "creditScore": 710,
+      "utilization": 40.0,
+      "addressMismatch": true,
+      "delinquencies": 2,
+      "channel": "MOBILE"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "HIGH" },
+      "risk_decision": { "recommendation": "MANUAL_REVIEW" },
+      "explainability": {
+        "adverse_action_codes_expected": ["AA07", "AA09"],
+        "summary_must_not_contain": []
+      }
+    }
+  },
+  {
+    "id": "GD-009",
+    "scenario": "minimal_fields_only_required",
+    "description": "Only required fields provided — system must handle missing optionals gracefully",
+    "tier": "approve",
+    "application": {
+      "name": "Iris Kim",
+      "creditScore": 740,
+      "utilization": 25.0
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision": { "recommendation": "APPROVE" },
+      "explainability": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-010",
+    "scenario": "adversarial_zero_utilization",
+    "description": "Zero utilization — should not confuse agent into wrong risk level",
+    "tier": "approve",
+    "application": {
+      "name": "James Okafor",
+      "creditScore": 800,
+      "utilization": 0.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW", "score_max": 0.15 },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision": { "recommendation": "APPROVE", "confidence_min": 0.70 },
+      "explainability": { "adverse_action_codes_expected": [] }
+    }
+  }
+]
