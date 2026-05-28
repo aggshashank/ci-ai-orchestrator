@@ -1,0 +1,19 @@
+FRAUD PREVENTION POLICY — CREDIT CARD APPLICATIONS v1.0
+
+1. ADDRESS VERIFICATION
+   1.1 Address mismatch between application and bureau records is a fraud indicator.
+   1.2 Address mismatch alone triggers MEDIUM fraud risk and requires verification.
+   1.3 Address mismatch combined with any other fraud indicator triggers HIGH fraud risk.
+   1.4 Applications with HIGH fraud risk must not be auto-approved under any circumstances.
+
+2. VELOCITY CHECKS
+   2.1 More than three applications from the same device within 24 hours triggers HIGH fraud risk.
+   2.2 More than two applications from the same IP address within one hour triggers review.
+
+3. CHANNEL RISK
+   3.1 Applications from PARTNER channel require additional identity verification.
+   3.2 Applications from MOBILE channel with address mismatch require step-up authentication.
+
+4. ESCALATION
+   4.1 Any application flagged HIGH fraud risk must be reviewed by the fraud operations team.
+   4.2 Fraud operations team has 4 business hours to complete review under SLA.

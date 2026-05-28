@@ -5,7 +5,7 @@ Single place that constructs the LangChain LLM and Embeddings objects.
 Uses langchain-ollama (the current non-deprecated package).
 
 Supported local models:
-  llama3.1          ~4.7GB  recommended default
+  llama3:latest      ~4.7GB  recommended default
   mistral           ~4.1GB  fast, reliable JSON output
   phi3              ~2.3GB  lightweight, good for 8GB RAM
   llama3.1:70b      ~40GB   best reasoning, needs 32GB+ RAM

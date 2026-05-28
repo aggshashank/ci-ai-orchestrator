@@ -365,7 +365,8 @@ If Ollama is not responding, open it from the Start menu.
 cd ai-orchestrator
 source venv/Scripts/activate
 
-python ingest_policies.py
+cd ai-orchestrator
+python -m rag.ingest
 ```
 
 Expected output:

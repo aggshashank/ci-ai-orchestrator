@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Ollama — local LLM, no API key
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1"
+    ollama_model: str = "llama3:latest"
     ollama_embed_model: str = "nomic-embed-text"
 
     # Qdrant

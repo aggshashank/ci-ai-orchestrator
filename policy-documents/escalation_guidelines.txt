@@ -1,0 +1,18 @@
+ESCALATION AND MANUAL REVIEW GUIDELINES v1.0
+
+1. MANUAL REVIEW TRIGGERS
+   1.1 AI recommendation of MANUAL_REVIEW with confidence below 0.75.
+   1.2 Revolving utilization above 80% with address mismatch present.
+   1.3 Credit score between 580 and 620 regardless of other signals.
+   1.4 One or two delinquencies in the past 24 months.
+
+2. SLA REQUIREMENTS
+   2.1 Standard manual review must be completed within 2 business days.
+   2.2 Expedited review must be completed within 4 business hours.
+
+3. ADVERSE ACTION CODES
+   AA01 — Credit score below minimum threshold
+   AA04 — Revolving credit utilization too high
+   AA07 — Address verification failed
+   AA09 — Recent delinquencies on credit report
+   AA12 — Application does not meet policy criteria
