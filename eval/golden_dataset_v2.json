@@ -1,0 +1,545 @@
+[
+  {
+    "id": "GD-001",
+    "scenario": "clear_approve_excellent_profile",
+    "description": "High credit score, low utilization, no fraud signals — unambiguous APPROVE",
+    "tier": "approve",
+    "application": {
+      "name": "Applicant A",
+      "creditScore": 790,
+      "utilization": 18.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "annualIncome": 95000,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW", "score_max": 0.25 },
+      "fraud_agent":  { "fraudRisk": "LOW", "recommendAction": "PROCEED" },
+      "policy_rag_agent": { "action": "APPROVE" },
+      "risk_decision_agent": { "recommendation": "APPROVE", "confidence_min": 0.65 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": [],
+        "summary_must_not_contain": ["decline", "manual review", "concern"]
+      }
+    }
+  },
+  {
+    "id": "GD-002",
+    "scenario": "clear_decline_very_low_score",
+    "description": "Credit score below 580 — automatic decline per policy",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant B",
+      "creditScore": 510,
+      "utilization": 55.0,
+      "addressMismatch": false,
+      "delinquencies": 2,
+      "channel": "MOBILE"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH", "score_min": 0.75 },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "DECLINE", "confidence_min": 0.70 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA01"],
+        "summary_must_not_contain": ["approve"]
+      }
+    }
+  },
+  {
+    "id": "GD-003",
+    "scenario": "manual_review_high_utilization_address_mismatch",
+    "description": "Utilization >80% AND address mismatch — policy mandates MANUAL_REVIEW",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant C",
+      "creditScore": 680,
+      "utilization": 83.0,
+      "addressMismatch": true,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "policy_rag_agent": { "policy_applicable": true },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW", "confidence_min": 0.40 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA04", "AA07"],
+        "summary_must_not_contain": ["approve immediately"]
+      }
+    }
+  },
+  {
+    "id": "GD-004",
+    "scenario": "clear_decline_all_high_signals",
+    "description": "All three risk signals HIGH — automatic decline",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant D",
+      "creditScore": 320,
+      "utilization": 98.0,
+      "addressMismatch": true,
+      "delinquencies": 4,
+      "channel": "PARTNER"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH", "score_min": 0.90 },
+      "fraud_agent":  { "fraudRisk": "HIGH" },
+      "risk_decision_agent": { "recommendation": "DECLINE", "confidence_min": 0.80 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA01", "AA04", "AA07", "AA09"],
+        "summary_must_not_contain": ["approve"]
+      }
+    }
+  },
+  {
+    "id": "GD-005",
+    "scenario": "borderline_score_no_fraud",
+    "description": "Score in review band (580-669), no fraud — MANUAL_REVIEW expected",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant E",
+      "creditScore": 612,
+      "utilization": 45.0,
+      "addressMismatch": false,
+      "delinquencies": 1,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA09"],
+        "summary_must_not_contain": []
+      }
+    }
+  },
+  {
+    "id": "GD-006",
+    "scenario": "excellent_score_high_utilization",
+    "description": "Very high credit score but utilization 75% — borderline",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant F",
+      "creditScore": 760,
+      "utilization": 76.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA04"],
+        "summary_must_not_contain": []
+      }
+    }
+  },
+  {
+    "id": "GD-007",
+    "scenario": "threshold_exact_credit_score_580",
+    "description": "Credit score exactly at MEDIUM boundary — edge case",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant G",
+      "creditScore": 580,
+      "utilization": 30.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-008",
+    "scenario": "fraud_high_address_mismatch_delinquencies",
+    "description": "Address mismatch + 2 delinquencies — fraud HIGH regardless of credit score",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant H",
+      "creditScore": 710,
+      "utilization": 40.0,
+      "addressMismatch": true,
+      "delinquencies": 2,
+      "channel": "MOBILE"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "HIGH" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA07", "AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-009",
+    "scenario": "minimal_fields_only_required",
+    "description": "Only required fields provided — system must handle missing optionals gracefully",
+    "tier": "approve",
+    "application": {
+      "name": "Applicant I",
+      "creditScore": 740,
+      "utilization": 25.0
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "APPROVE" },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-010",
+    "scenario": "adversarial_zero_utilization",
+    "description": "Zero utilization — should not confuse agent into wrong risk level",
+    "tier": "approve",
+    "application": {
+      "name": "Applicant J",
+      "creditScore": 800,
+      "utilization": 0.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW", "score_max": 0.15 },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "APPROVE", "confidence_min": 0.70 },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-011",
+    "scenario": "branch_channel_excellent_profile",
+    "description": "BRANCH channel, clean profile — channel must not penalise approve decision",
+    "tier": "approve",
+    "application": {
+      "name": "Applicant K",
+      "creditScore": 755,
+      "utilization": 22.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "BRANCH"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "APPROVE" },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-012",
+    "scenario": "partner_channel_with_fraud_signals",
+    "description": "PARTNER channel + address mismatch + poor score — compound risk",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant L",
+      "creditScore": 490,
+      "utilization": 70.0,
+      "addressMismatch": true,
+      "delinquencies": 3,
+      "channel": "PARTNER"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH" },
+      "fraud_agent":  { "fraudRisk": "HIGH" },
+      "risk_decision_agent": { "recommendation": "DECLINE", "confidence_min": 0.80 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA01", "AA07", "AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-013",
+    "scenario": "score_669_top_of_fair_band",
+    "description": "Credit score exactly at top of FAIR band (669) — should be MEDIUM",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant M",
+      "creditScore": 669,
+      "utilization": 35.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-014",
+    "scenario": "score_670_enters_good_band",
+    "description": "Credit score at 670 — first score in GOOD band; clean otherwise",
+    "tier": "approve",
+    "application": {
+      "name": "Applicant N",
+      "creditScore": 670,
+      "utilization": 28.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "APPROVE" },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-015",
+    "scenario": "score_739_top_of_good_band",
+    "description": "Score 739, single delinquency — should still route to MANUAL_REVIEW",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant O",
+      "creditScore": 739,
+      "utilization": 42.0,
+      "addressMismatch": false,
+      "delinquencies": 1,
+      "channel": "MOBILE"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-016",
+    "scenario": "maximum_utilization_100_percent",
+    "description": "Utilization at 100% — extreme edge case; triggers AA04",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant P",
+      "creditScore": 640,
+      "utilization": 100.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH", "score_min": 0.80 },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "DECLINE" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA04"]
+      }
+    }
+  },
+  {
+    "id": "GD-017",
+    "scenario": "three_delinquencies_threshold",
+    "description": "Exactly 3 delinquencies — triggers HIGH credit risk per policy",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant Q",
+      "creditScore": 620,
+      "utilization": 55.0,
+      "addressMismatch": false,
+      "delinquencies": 3,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH" },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "DECLINE" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-018",
+    "scenario": "single_delinquency_otherwise_excellent",
+    "description": "One delinquency but otherwise excellent — should prompt MANUAL_REVIEW not DECLINE",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant R",
+      "creditScore": 780,
+      "utilization": 15.0,
+      "addressMismatch": false,
+      "delinquencies": 1,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-019",
+    "scenario": "address_mismatch_only_good_credit",
+    "description": "Address mismatch only, no delinquencies, good score — fraud MEDIUM, likely MANUAL_REVIEW",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant S",
+      "creditScore": 720,
+      "utilization": 30.0,
+      "addressMismatch": true,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA07"]
+      }
+    }
+  },
+  {
+    "id": "GD-020",
+    "scenario": "all_signals_cleanest_approve",
+    "description": "Perfect profile: 850 score, 0% utilization, no fraud — highest confidence APPROVE",
+    "tier": "approve",
+    "application": {
+      "name": "Applicant T",
+      "creditScore": 850,
+      "utilization": 0.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "annualIncome": 200000,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW", "score_max": 0.10 },
+      "fraud_agent":  { "fraudRisk": "LOW", "recommendAction": "PROCEED" },
+      "risk_decision_agent": { "recommendation": "APPROVE", "confidence_min": 0.80 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": [],
+        "summary_must_not_contain": ["decline", "review", "concern", "risk"]
+      }
+    }
+  },
+  {
+    "id": "GD-021",
+    "scenario": "mobile_two_delinquencies_fair_score",
+    "description": "MOBILE, 2 delinquencies, fair score — compound fraud + credit risk",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant U",
+      "creditScore": 598,
+      "utilization": 62.0,
+      "addressMismatch": false,
+      "delinquencies": 2,
+      "channel": "MOBILE"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH" },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "DECLINE" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-022",
+    "scenario": "excellent_score_mismatch_address",
+    "description": "Excellent score (800+) but address mismatch — fraud concern should still flag",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant V",
+      "creditScore": 815,
+      "utilization": 12.0,
+      "addressMismatch": true,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "LOW" },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA07"]
+      }
+    }
+  },
+  {
+    "id": "GD-023",
+    "scenario": "score_exactly_300_minimum_fico",
+    "description": "Score at FICO minimum (300) — system must handle floor gracefully",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant W",
+      "creditScore": 300,
+      "utilization": 85.0,
+      "addressMismatch": false,
+      "delinquencies": 5,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH", "score_min": 0.95 },
+      "fraud_agent":  { "fraudRisk": "MEDIUM" },
+      "risk_decision_agent": { "recommendation": "DECLINE", "confidence_min": 0.85 },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA01", "AA04", "AA09"]
+      }
+    }
+  },
+  {
+    "id": "GD-024",
+    "scenario": "utilization_exactly_80_percent_boundary",
+    "description": "Utilization exactly at HIGH threshold (80%) — edge case handling",
+    "tier": "manual_review",
+    "application": {
+      "name": "Applicant X",
+      "creditScore": 700,
+      "utilization": 80.0,
+      "addressMismatch": false,
+      "delinquencies": 0,
+      "channel": "WEB"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "MEDIUM" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "MANUAL_REVIEW" },
+      "explainability_agent": { "adverse_action_codes_expected": [] }
+    }
+  },
+  {
+    "id": "GD-025",
+    "scenario": "partner_low_score_decline",
+    "description": "PARTNER channel, score 545 — decline should not be blocked by channel",
+    "tier": "decline",
+    "application": {
+      "name": "Applicant Y",
+      "creditScore": 545,
+      "utilization": 68.0,
+      "addressMismatch": false,
+      "delinquencies": 1,
+      "channel": "PARTNER"
+    },
+    "expected": {
+      "credit_agent": { "riskLevel": "HIGH" },
+      "fraud_agent":  { "fraudRisk": "LOW" },
+      "risk_decision_agent": { "recommendation": "DECLINE" },
+      "explainability_agent": {
+        "adverse_action_codes_expected": ["AA01"]
+      }
+    }
+  }
+]

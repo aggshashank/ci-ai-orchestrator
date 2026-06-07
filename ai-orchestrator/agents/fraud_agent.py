@@ -1,11 +1,11 @@
 """
-Fraud Risk Agent
-----------------
-Analyses address mismatch, velocity indicators, and anomaly signals.
+Fraud risk agent.
 """
 import json
 import time
+
 import structlog
+
 from agents.state import GraphState
 from llm.factory import get_llm
 
@@ -40,8 +40,7 @@ def fraud_agent(state: GraphState) -> dict:
     app = state["application"]
     corr = state["correlation_id"]
 
-    logger.info("fraud_agent start", correlation_id=corr,
-                address_mismatch=app.addressMismatch)
+    logger.info("fraud_agent start", correlation_id=corr)
 
     prompt = FRAUD_PROMPT.format(
         address_mismatch=str(app.addressMismatch).lower(),
@@ -59,16 +58,25 @@ def fraud_agent(state: GraphState) -> dict:
             raise ValueError(f"Missing fields: {required - result.keys()}")
 
         latency = round(time.time() - start, 2)
-        logger.info("fraud_agent complete", correlation_id=corr,
-                    fraud_risk=result["fraudRisk"], latency_s=latency)
+        logger.info(
+            "fraud_agent complete",
+            correlation_id=corr,
+            fraud_risk=result["fraudRisk"],
+            latency_s=latency,
+        )
         return {"fraud_result": result}
 
-    except Exception as e:
-        logger.error("fraud_agent failed — using fallback",
-                     correlation_id=corr, error=str(e))
-        return {"fraud_result": {
-            "fraudRisk": "MEDIUM",
-            "reason": f"Fraud agent error — fallback applied: {str(e)}",
-            "indicators": ["agent_error_fallback"],
-            "recommendAction": "MANUAL_REVIEW",
-        }}
+    except Exception as exc:
+        logger.error(
+            "fraud_agent failed - using fallback",
+            correlation_id=corr,
+            error_type=type(exc).__name__,
+        )
+        return {
+            "fraud_result": {
+                "fraudRisk": "MEDIUM",
+                "reason": "Fraud agent fallback applied after processing error",
+                "indicators": ["agent_error_fallback"],
+                "recommendAction": "MANUAL_REVIEW",
+            }
+        }

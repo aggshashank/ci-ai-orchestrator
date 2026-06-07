@@ -21,7 +21,7 @@ AI_ORCH = PROJECT_ROOT / "ai-orchestrator"
 sys.path.insert(0, str(PROJECT_ROOT / "eval"))
 sys.path.insert(0, str(AI_ORCH))
 
-import json, time, argparse, uuid
+import json, os, time, argparse, uuid
 from datetime import datetime, timezone
 
 from eval_config import AGENT_THRESHOLDS, ACTIVE_PROVIDER
@@ -148,7 +148,13 @@ def build_state(case: dict) -> dict:
 
 
 def run_eval(args) -> "PipelineEvalResult":
-    dataset_path = Path(__file__).parent / "golden_dataset.json"
+    dataset_ver = getattr(args, "dataset", "v2")
+    if dataset_ver == "v1":
+        dataset_path = Path(__file__).parent / "golden_dataset.json"
+    else:
+        dataset_path = Path(__file__).parent / "golden_dataset_v2.json"
+        if not dataset_path.exists():
+            dataset_path = Path(__file__).parent / "golden_dataset.json"
     cases = json.loads(dataset_path.read_text())
 
     # Filter by case or agent if requested
@@ -307,6 +313,12 @@ def main():
                         help="Validate config and dataset without calling agents")
     parser.add_argument("--report",        action="store_true",
                         help="Generate HTML report after eval")
+    parser.add_argument("--save-db",       action="store_true",
+                        help="Persist results to PostgreSQL")
+    parser.add_argument("--dataset",       default="v2",
+                        help="Dataset version to use: v1 or v2 (default: v2)")
+    parser.add_argument("--provider",      default=None,
+                        help="LLM provider label for DB tagging (e.g. ollama, groq)")
     args = parser.parse_args()
 
     pipeline = run_eval(args)
@@ -316,6 +328,16 @@ def main():
         report_path = Path(__file__).parent / "reports" / "latest.html"
         generate_report(pipeline, report_path)
         print(f"[INFO] Report written to {report_path}")
+
+    if getattr(args, "save_db", False):
+        try:
+            from db_results import save_eval_run
+            provider = getattr(args, "provider", None) or os.environ.get("LLM_PROVIDER", "unknown")
+            save_eval_run(pipeline, pipeline.per_case_results,
+                          provider=provider,
+                          dataset_ver=getattr(args, "dataset", "v2"))
+        except Exception as exc:
+            print(f"[WARN] DB persist failed: {exc}")
 
     # Exit 1 if regressions detected (useful for CI)
     sys.exit(1 if pipeline.regressions else 0)

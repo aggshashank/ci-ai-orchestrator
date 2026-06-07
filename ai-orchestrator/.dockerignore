@@ -1,0 +1,15 @@
+venv/
+vene/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.env.*
+!.env.example
+audit_log.jsonl
+*.jsonl
+*.log

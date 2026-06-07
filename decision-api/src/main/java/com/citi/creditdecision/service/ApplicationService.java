@@ -1,14 +1,19 @@
 package com.citi.creditdecision.service;
 
 import com.citi.creditdecision.kafka.ApplicationEventProducer;
-import com.citi.creditdecision.model.*;
+import com.citi.creditdecision.model.ApplicationReceivedEvent;
+import com.citi.creditdecision.model.ApplicationRequest;
+import com.citi.creditdecision.model.ApplicationResponse;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.UUID;
+
+import static net.logstash.logback.argument.StructuredArguments.kv;
 
 /**
  * Core intake service.
@@ -29,11 +34,13 @@ public class ApplicationService {
     private final MeterRegistry meterRegistry;
 
     public ApplicationResponse accept(ApplicationRequest request) {
-        String correlationId = generateCorrelationId();
+        String correlationId = currentCorrelationId();
 
-        log.info("Accepting application | correlationId={} applicant={} creditScore={} utilization={}",
-                correlationId, mask(request.getName()),
-                request.getCreditScore(), request.getUtilization());
+        log.info("Accepting application",
+                kv("channel", nullSafe(request.getChannel(), "UNKNOWN")),
+                kv("credit_band", scoreBand(request.getCreditScore())),
+                kv("has_delinquencies", request.getDelinquencies() != null && request.getDelinquencies() > 0),
+                kv("address_mismatch", Boolean.TRUE.equals(request.getAddressMismatch())));
 
         ApplicationReceivedEvent event = buildEvent(correlationId, request);
         producer.publish(event);
@@ -44,13 +51,19 @@ public class ApplicationService {
         return ApplicationResponse.accepted(correlationId);
     }
 
-    /**
-     * Correlation ID format: APP-<timestamp-ms>-<8-char UUID fragment>
-     * Human-readable for ops. Production: use ULID for sortable globally unique IDs.
-     */
     private String generateCorrelationId() {
         String uuidSuffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
         return "APP-" + System.currentTimeMillis() + "-" + uuidSuffix;
+    }
+
+    private String currentCorrelationId() {
+        String correlationId = MDC.get("correlation_id");
+        if (correlationId != null && !correlationId.isBlank()) {
+            return correlationId;
+        }
+        correlationId = generateCorrelationId();
+        MDC.put("correlation_id", correlationId);
+        return correlationId;
     }
 
     private ApplicationReceivedEvent buildEvent(String correlationId, ApplicationRequest request) {
@@ -63,13 +76,23 @@ public class ApplicationService {
                 .build();
     }
 
-    /** Mask all but first character — keeps logs useful without leaking PII. */
-    private String mask(String name) {
-        if (name == null || name.length() < 2) return "***";
-        return name.charAt(0) + "*".repeat(name.length() - 1);
-    }
-
     private String nullSafe(String value, String fallback) {
         return (value != null && !value.isBlank()) ? value : fallback;
+    }
+
+    private String scoreBand(Integer creditScore) {
+        if (creditScore == null) {
+            return "UNKNOWN";
+        }
+        if (creditScore < 580) {
+            return "POOR";
+        }
+        if (creditScore < 670) {
+            return "FAIR";
+        }
+        if (creditScore < 740) {
+            return "GOOD";
+        }
+        return "VERY_GOOD";
     }
 }

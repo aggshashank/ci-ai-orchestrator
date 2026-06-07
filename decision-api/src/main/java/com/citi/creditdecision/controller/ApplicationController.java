@@ -27,7 +27,7 @@ public class ApplicationController {
     @PostMapping("/applications")
     public ResponseEntity<ApplicationResponse> submitApplication(
             @Valid @RequestBody ApplicationRequest request) {
-        log.debug("POST /api/v1/applications received");
+        log.debug("Application submission received");
         ApplicationResponse response = applicationService.accept(request);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }

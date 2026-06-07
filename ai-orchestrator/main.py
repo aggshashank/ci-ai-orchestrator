@@ -1,19 +1,23 @@
 """
-AI Orchestrator — FastAPI entry point
+AI Orchestrator - FastAPI entry point
 """
 import threading
-import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
 
-from llm.factory import check_llm_health
-from db.session import init_db, close_db
-from db.repository import DecisionRepository
-from db.session import get_session
-from messaging.consumer import start_consumer
+import structlog
+from fastapi import FastAPI, HTTPException
+from prometheus_client import Counter, Gauge, Histogram, make_asgi_app
+from pydantic import BaseModel
+
+from logging_config import configure_logging, correlation_middleware
+
+configure_logging()
+
 from config import get_settings
+from db.repository import DecisionRepository
+from db.session import close_db, get_session, init_db
+from llm.factory import check_llm_health
+from messaging.consumer import start_consumer
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -21,7 +25,6 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     await init_db()
 
     health = check_llm_health()
@@ -36,7 +39,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     await close_db()
 
 
@@ -45,25 +47,23 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.middleware("http")(correlation_middleware)
 
-# ── Prometheus metrics ─────────────────────────────────────────────────────────
-AGENT_LATENCY   = Histogram("agent_execution_seconds", "Agent latency", ["agent"])
-RECOMMENDATION  = Counter("recommendation_total", "Recommendations", ["recommendation"])
-TOKEN_USAGE     = Counter("llm_token_usage_total", "Token usage", ["agent", "token_type"])
+AGENT_LATENCY = Histogram("agent_execution_seconds", "Agent latency", ["agent"])
+RECOMMENDATION = Counter("recommendation_total", "Recommendations", ["recommendation"])
+TOKEN_USAGE = Counter("llm_token_usage_total", "Token usage", ["agent", "token_type"])
 MANUAL_REVIEW_Q = Gauge("manual_review_pending", "Pending manual reviews")
 
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
 
 
-# ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     llm = check_llm_health()
     return {"status": "ok", "llm": llm}
 
 
-# ── HITL endpoints ─────────────────────────────────────────────────────────────
 @app.get("/api/v1/review-queue")
 async def review_queue():
     async with get_session() as session:
@@ -78,7 +78,7 @@ async def review_queue():
             "receivedAt": d.created_at.isoformat(),
             "recommendation": d.recommendation,
             "confidence": d.confidence,
-            "summary": "",          # fetched below if explanation agent_output present
+            "summary": "",
             "adverse_codes": [a.code for a in d.adverse_actions],
         }
         for d in pending
@@ -87,7 +87,7 @@ async def review_queue():
 
 
 class ReviewDecision(BaseModel):
-    decision: str     # APPROVE | DECLINE
+    decision: str
     reviewer: str
     notes: str = ""
 
@@ -110,10 +110,16 @@ async def submit_decision(correlation_id: str, body: ReviewDecision):
         raise HTTPException(404, f"correlationId {correlation_id} not found")
 
     RECOMMENDATION.labels(recommendation=f"HUMAN_{body.decision}").inc()
-    logger.info("Human decision recorded", correlation_id=correlation_id,
-                decision=body.decision, reviewer=body.reviewer)
-    return {"status": "recorded", "correlationId": correlation_id,
-            "decision": body.decision}
+    logger.info(
+        "Human decision recorded",
+        correlation_id=correlation_id,
+        decision=body.decision,
+    )
+    return {
+        "status": "recorded",
+        "correlationId": correlation_id,
+        "decision": body.decision,
+    }
 
 
 @app.get("/api/v1/audit/{correlation_id}")
@@ -125,7 +131,6 @@ async def get_audit(correlation_id: str):
     if not decision:
         raise HTTPException(404, f"correlationId {correlation_id} not found")
 
-    # Reconstruct the audit shape expected by consumers
     agent_map = {ao.agent_name: ao.output_json for ao in decision.agent_outputs}
     return {
         "correlation_id": decision.correlation_id,

@@ -1,19 +1,45 @@
-version: '3.8'
+version: "3.8"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AI Credit Card Decisioning POC — Infrastructure Services
+# AI Credit Card Decisioning POC — Complete Platform Stack
 #
-# Starts: Zookeeper, Kafka, Kafka UI, Qdrant
-# Does NOT start: Spring Boot API or Python Orchestrator (run those manually)
+# Service dependency order:
+#   postgres, zookeeper, qdrant  (no deps)
+#   kafka                        ← zookeeper healthy
+#   db-migrate (init)            ← postgres healthy
+#   policy-ingest (init)         ← qdrant healthy
+#   decision-api                 ← kafka healthy
+#   ai-orchestrator              ← postgres healthy + kafka healthy +
+#                                   db-migrate completed + policy-ingest completed
 #
 # Usage:
-#   docker-compose up -d          start all services
-#   docker-compose down           stop all services
-#   docker-compose ps             check status
-#   docker-compose logs kafka     view kafka logs
+#   docker-compose up -d                        start everything
+#   docker-compose up -d --build                rebuild app images
+#   docker-compose -f docker-compose.yml \
+#     -f docker-compose.dev.yml up -d           development overrides
+#   docker-compose -f docker-compose.yml \
+#     -f docker-compose.prod.yml up -d          production overrides
 # ─────────────────────────────────────────────────────────────────────────────
 
+x-ai-orchestrator-env: &ai-orchestrator-env
+  DATABASE_URL: postgresql+asyncpg://poc:poc@poc-postgres:5432/decisions
+  KAFKA_BOOTSTRAP_SERVERS: poc-kafka:29092
+  QDRANT_URL: http://poc-qdrant:6333
+  QDRANT_COLLECTION: policy_docs
+  POLICY_DOCS_PATH: /policy-documents
+  # Ollama runs on the Docker host — accessible via host.docker.internal (Mac/Windows)
+  # On Linux replace with: http://172.17.0.1:11434 or set OLLAMA_BASE_URL in .env
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3:latest}
+  OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+  LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+  EMBED_PROVIDER: ${EMBED_PROVIDER:-ollama}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
 services:
+
+  # ── Infrastructure ───────────────────────────────────────────────────────────
 
   postgres:
     image: postgres:16-alpine
@@ -33,6 +59,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.0
@@ -61,14 +88,12 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # PLAINTEXT = accessible from host (localhost:9092)
-      # PLAINTEXT_INTERNAL = inter-container communication
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://poc-kafka:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_LOG_RETENTION_HOURS: 168        # keep messages 7 days
+      KAFKA_LOG_RETENTION_HOURS: 168
     networks:
       - poc-network
     healthcheck:
@@ -96,7 +121,7 @@ services:
     container_name: poc-qdrant
     ports:
       - "6333:6333"
-      - "6334:6334"    # gRPC port (optional)
+      - "6334:6334"
     volumes:
       - qdrant_storage:/qdrant/storage
     networks:
@@ -107,12 +132,136 @@ services:
       timeout: 5s
       retries: 5
 
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: poc-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    networks:
+      - poc-network
+
+  grafana:
+    image: grafana/grafana:10.4.3
+    container_name: poc-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - poc-network
+
+  # ── Init containers (run once, then exit) ────────────────────────────────────
+
+  db-migrate:
+    build:
+      context: ./ai-orchestrator
+      dockerfile: Dockerfile
+    container_name: poc-db-migrate
+    environment:
+      <<: *ai-orchestrator-env
+    command: ["sh", "scripts/init-db.sh"]
+    volumes:
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - poc-network
+    restart: "no"
+
+  policy-ingest:
+    build:
+      context: ./ai-orchestrator
+      dockerfile: Dockerfile
+    container_name: poc-policy-ingest
+    environment:
+      <<: *ai-orchestrator-env
+    command: ["sh", "scripts/ingest-policies.sh"]
+    volumes:
+      - ./scripts:/app/scripts:ro
+      - ./policy-documents:/policy-documents:ro
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    networks:
+      - poc-network
+    restart: "no"
+
+  # ── Application services ─────────────────────────────────────────────────────
+
+  decision-api:
+    build:
+      context: ./decision-api
+      dockerfile: Dockerfile
+    container_name: poc-decision-api
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: poc-kafka:29092
+      APP_ENV: docker
+    networks:
+      - poc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  ai-orchestrator:
+    build:
+      context: ./ai-orchestrator
+      dockerfile: Dockerfile
+    container_name: poc-ai-orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+      policy-ingest:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *ai-orchestrator-env
+    volumes:
+      - ./policy-documents:/policy-documents:ro
+    networks:
+      - poc-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"    # Linux compatibility
+
 networks:
   poc-network:
     driver: bridge
 
 volumes:
+  postgres_data:
+    driver: local
   qdrant_storage:
     driver: local
-  postgres_data:
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local

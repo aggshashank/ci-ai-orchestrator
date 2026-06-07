@@ -1,0 +1,39 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Development overrides — apply on top of docker-compose.yml:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# Changes:
+#   ai-orchestrator  live-reload via --reload, source mounted, DEBUG logging
+#   decision-api     remote debug port 5005 exposed, DEBUG logging
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  ai-orchestrator:
+    build:
+      context: ./ai-orchestrator
+      target: builder          # use builder stage for faster rebuilds
+    command:
+      - uvicorn
+      - main:app
+      - "--host=0.0.0.0"
+      - "--port=8000"
+      - "--reload"
+      - "--reload-dir=/app"
+    volumes:
+      - ./ai-orchestrator:/app   # live source mount for hot reload
+      - ./policy-documents:/policy-documents:ro
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      LOG_LEVEL: debug
+
+  decision-api:
+    environment:
+      JAVA_TOOL_OPTIONS: >-
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+      LOGGING_LEVEL_COM_CITI_CREDITDECISION: DEBUG
+    ports:
+      - "8080:8080"
+      - "5005:5005"   # remote debug

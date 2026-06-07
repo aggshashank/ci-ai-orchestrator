@@ -1,26 +1,24 @@
 """
-Explainability Agent
---------------------
-Generates audit-friendly, ECOA-compliant explanations.
-Persists the full decision record to PostgreSQL via DecisionRepository.
+Explainability agent.
 """
 import asyncio
 import json
 import time
-import structlog
 from datetime import datetime, timezone
+
+import structlog
+
 from agents.state import GraphState
 from llm.factory import get_llm
 
 logger = structlog.get_logger()
 
-# ECOA-style adverse action codes
 ADVERSE_ACTION_CODES = {
-    "low_credit_score":  ("AA01", "Credit score below minimum threshold"),
-    "high_utilization":  ("AA04", "Revolving credit utilization too high"),
-    "address_mismatch":  ("AA07", "Address verification failed"),
-    "delinquencies":     ("AA09", "Recent delinquencies on credit report"),
-    "policy_threshold":  ("AA12", "Application does not meet policy criteria"),
+    "low_credit_score": ("AA01", "Credit score below minimum threshold"),
+    "high_utilization": ("AA04", "Revolving credit utilization too high"),
+    "address_mismatch": ("AA07", "Address verification failed"),
+    "delinquencies": ("AA09", "Recent delinquencies on credit report"),
+    "policy_threshold": ("AA12", "Application does not meet policy criteria"),
 }
 
 EXPLAIN_PROMPT = """\
@@ -30,8 +28,8 @@ Decision: {recommendation}
 Confidence: {confidence}
 
 Signals:
-- Credit risk: {credit_risk} — {credit_reason}
-- Fraud risk: {fraud_risk} — {fraud_reason}
+- Credit risk: {credit_risk} - {credit_reason}
+- Fraud risk: {fraud_risk} - {fraud_reason}
 - Policy rules triggered: {policy_rules}
 
 Write a clear, professional explanation. Return ONLY a JSON object:
@@ -56,20 +54,23 @@ def _derive_adverse_codes(state: GraphState) -> list[dict]:
         codes.append(ADVERSE_ACTION_CODES["delinquencies"])
     if state.get("policy_context", {}).get("policy_applicable"):
         codes.append(ADVERSE_ACTION_CODES["policy_threshold"])
-    return [{"code": c[0], "description": c[1]} for c in codes]
+    return [{"code": code, "description": description} for code, description in codes]
 
 
 async def _persist_decision(audit_record: dict) -> None:
-    """Write the full audit record to PostgreSQL (best-effort; never raises)."""
     try:
-        from db.session import get_session
         from db.repository import DecisionRepository
+        from db.session import get_session
+
         async with get_session() as session:
             repo = DecisionRepository(session)
             await repo.save_decision(audit_record)
-    except Exception as e:
-        logger.error("decision_persist failed — decision NOT stored in DB",
-                     error=str(e), correlation_id=audit_record.get("correlation_id"))
+    except Exception as exc:
+        logger.error(
+            "decision_persist failed - decision NOT stored in DB",
+            error_type=type(exc).__name__,
+            correlation_id=audit_record.get("correlation_id"),
+        )
 
 
 def explainability_agent(state: GraphState) -> dict:
@@ -77,11 +78,14 @@ def explainability_agent(state: GraphState) -> dict:
     corr = state["correlation_id"]
     decision = state.get("risk_decision", {})
 
-    logger.info("explainability_agent start", correlation_id=corr,
-                recommendation=decision.get("recommendation"))
+    logger.info(
+        "explainability_agent start",
+        correlation_id=corr,
+        recommendation=decision.get("recommendation"),
+    )
 
     credit = state.get("credit_result", {})
-    fraud  = state.get("fraud_result", {})
+    fraud = state.get("fraud_result", {})
     policy = state.get("policy_context", {})
 
     prompt = EXPLAIN_PROMPT.format(
@@ -98,11 +102,15 @@ def explainability_agent(state: GraphState) -> dict:
         llm = get_llm()
         raw = llm.invoke(prompt)
         llm_result = json.loads(raw)
-    except Exception as e:
-        logger.error("explainability LLM failed", error=str(e))
+    except Exception as exc:
+        logger.error(
+            "explainability LLM failed",
+            correlation_id=corr,
+            error_type=type(exc).__name__,
+        )
         llm_result = {
             "plain_language_summary": "Your application is under review.",
-            "audit_narrative": f"Explainability agent encountered an error: {str(e)}",
+            "audit_narrative": "Explainability agent fallback applied after processing error.",
             "recommended_next_steps": "Contact customer service.",
         }
 
@@ -129,20 +137,25 @@ def explainability_agent(state: GraphState) -> dict:
         "explanation": explanation,
     }
 
-    # Persist to PostgreSQL — run async persist in the current event loop if available,
-    # otherwise create one (handles both FastAPI and Kafka consumer call paths).
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.ensure_future(_persist_decision(audit_record))
         else:
             loop.run_until_complete(_persist_decision(audit_record))
-    except Exception as e:
-        logger.error("explainability_agent persist dispatch failed", error=str(e))
+    except Exception as exc:
+        logger.error(
+            "explainability_agent persist dispatch failed",
+            correlation_id=corr,
+            error_type=type(exc).__name__,
+        )
 
     latency = round(time.time() - start, 2)
-    logger.info("explainability_agent complete", correlation_id=corr,
-                adverse_codes=[c["code"] for c in adverse_codes],
-                latency_s=latency)
+    logger.info(
+        "explainability_agent complete",
+        correlation_id=corr,
+        adverse_codes=[code["code"] for code in adverse_codes],
+        latency_s=latency,
+    )
 
     return {"explanation": explanation}

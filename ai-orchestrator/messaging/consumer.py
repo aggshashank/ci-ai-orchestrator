@@ -1,18 +1,17 @@
 """
-Kafka Consumer
---------------
-Consumes ApplicationReceivedEvent from application.received,
-invokes the LangGraph workflow, routes MANUAL_REVIEW to Kafka.
+Kafka consumer for application.received events.
 """
 import json
 import threading
+
 import structlog
 from kafka import KafkaConsumer
-from kafka.errors import KafkaError
-from models.events import ApplicationReceivedEvent
-from graph.workflow import build_workflow
-from messaging.dlq_producer import DlqProducer
+
 from config import get_settings
+from graph.workflow import build_workflow
+from logging_config import bind_correlation_id, clear_log_context
+from messaging.dlq_producer import DlqProducer
+from models.events import ApplicationReceivedEvent
 
 logger = structlog.get_logger()
 _graph = None
@@ -23,7 +22,7 @@ def get_graph():
     global _graph
     with _graph_lock:
         if _graph is None:
-            logger.info("Building LangGraph workflow...")
+            logger.info("Building LangGraph workflow")
             _graph = build_workflow()
             logger.info("LangGraph workflow ready")
     return _graph
@@ -38,14 +37,16 @@ def start_consumer():
         bootstrap_servers=settings.kafka_bootstrap_servers,
         group_id=settings.kafka_group_id,
         auto_offset_reset="earliest",
-        enable_auto_commit=False,         # manual commit after successful processing
+        enable_auto_commit=False,
         value_deserializer=lambda b: json.loads(b.decode("utf-8")),
-        consumer_timeout_ms=1000,         # poll timeout — keeps loop alive
+        consumer_timeout_ms=1000,
     )
 
-    logger.info("Kafka consumer started",
-                topic=settings.kafka_topic_application_received,
-                group=settings.kafka_group_id)
+    logger.info(
+        "Kafka consumer started",
+        topic=settings.kafka_topic_application_received,
+        group=settings.kafka_group_id,
+    )
 
     graph = get_graph()
 
@@ -56,11 +57,13 @@ def start_consumer():
                 try:
                     event = ApplicationReceivedEvent(**message.value)
                     corr = event.correlationId
+                    bind_correlation_id(corr)
 
-                    logger.info("Event received",
-                                correlation_id=corr,
-                                channel=event.channel,
-                                offset=message.offset)
+                    logger.info(
+                        "Event received",
+                        correlation_id=corr,
+                        offset=message.offset,
+                    )
 
                     state = {
                         "correlation_id": corr,
@@ -70,17 +73,23 @@ def start_consumer():
                     result = graph.invoke(state)
                     recommendation = result.get("risk_decision", {}).get("recommendation")
 
-                    logger.info("Workflow complete",
-                                correlation_id=corr,
-                                recommendation=recommendation)
-
+                    logger.info(
+                        "Workflow complete",
+                        correlation_id=corr,
+                        recommendation=recommendation,
+                    )
                     consumer.commit()
 
-                except Exception as e:
-                    logger.error("Event processing failed — routing to DLQ",
-                                 correlation_id=corr, error=str(e))
-                    dlq.send(message.value, error=str(e))
-                    consumer.commit()   # commit to avoid reprocessing the broken event
+                except Exception as exc:
+                    logger.error(
+                        "Event processing failed - routing to DLQ",
+                        correlation_id=corr,
+                        error_type=type(exc).__name__,
+                    )
+                    dlq.send(message.value, error_type=type(exc).__name__)
+                    consumer.commit()
+                finally:
+                    clear_log_context()
 
-        except Exception as outer:
-            logger.error("Consumer loop error", error=str(outer))
+        except Exception as exc:
+            logger.error("Consumer loop error", error_type=type(exc).__name__)

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!--
+        Spring Boot profile-aware logback config.
+        Uses logstash-logback-encoder (already in pom.xml) for newline-delimited JSON.
+
+        Every log line contains:
+          timestamp, level, logger, thread, message
+          service         — from spring.application.name
+          correlation_id  — from MDC (set by MDCFilter on every HTTP request)
+          + any kv() structured arguments from log.info(..., kv("k","v"))
+          + stack_trace   — on exceptions (root cause first, truncated)
+
+        PII policy: never log name, annualIncome, or any raw applicant identifiers.
+        ApplicationService only logs risk signals (credit_band, channel, flags).
+    -->
+
+    <springProperty name="APP_NAME" source="spring.application.name" defaultValue="decision-api"/>
+    <springProperty name="ENV"      source="APP_ENV"                  defaultValue="local"/>
+
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!--
+                LogstashEncoder automatically includes:
+                  - all MDC entries as top-level JSON fields (correlation_id, etc.)
+                  - structured arguments from kv() / StructuredArguments as top-level fields
+                  - stack traces via ShortenedThrowableConverter
+            -->
+            <customFields>{"service":"${APP_NAME}","environment":"${ENV}"}</customFields>
+
+            <fieldNames>
+                <!-- Rename @timestamp → timestamp for ELK/Loki compatibility -->
+                <timestamp>timestamp</timestamp>
+                <!-- Drop the logstash @version field -->
+                <version>[ignore]</version>
+                <!-- Drop the numeric levelValue; keep the string level -->
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>8</maxDepthPerThrowable>
+                <maxLength>2048</maxLength>
+                <rootCauseFirst>true</rootCauseFirst>
+                <!-- Drop noise from Spring/Tomcat internals -->
+                <exclude>sun\.reflect\..*</exclude>
+                <exclude>java\.lang\.reflect\..*</exclude>
+                <exclude>org\.springframework\.web\.servlet\.FrameworkServlet</exclude>
+            </throwableConverter>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </root>
+
+    <logger name="com.citi.creditdecision"  level="DEBUG" additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+    <logger name="org.springframework.kafka" level="INFO"  additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+    <!-- Suppress chatty Kafka client internals -->
+    <logger name="org.apache.kafka"          level="WARN"  additivity="false">
+        <appender-ref ref="JSON_CONSOLE"/>
+    </logger>
+
+</configuration>

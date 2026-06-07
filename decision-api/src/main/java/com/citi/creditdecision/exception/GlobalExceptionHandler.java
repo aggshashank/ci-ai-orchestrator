@@ -12,24 +12,19 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Centralised exception handler.
- *
- * Intercepts bean validation failures and returns a structured 400
- * with field-level error messages — avoids leaking stack traces to callers.
- */
+import static net.logstash.logback.argument.StructuredArguments.kv;
+
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    /** Bean validation failure → 400 with per-field errors */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(
             MethodArgumentNotValidException ex) {
 
         Map<String, String> fieldErrors = new HashMap<>();
-        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
-            fieldErrors.put(fe.getField(), fe.getDefaultMessage());
+        for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
+            fieldErrors.put(fieldError.getField(), fieldError.getDefaultMessage());
         }
 
         Map<String, Object> body = new HashMap<>();
@@ -38,14 +33,14 @@ public class GlobalExceptionHandler {
         body.put("fieldErrors", fieldErrors);
         body.put("timestamp", Instant.now().toString());
 
-        log.warn("Validation failure: {}", fieldErrors);
+        log.warn("Validation failure", kv("field_count", fieldErrors.size()));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
-    /** Catch-all — log and return generic 500 */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleUnexpected(Exception ex) {
-        log.error("Unexpected error", ex);
+        log.error("Unexpected error", kv("error_type", ex.getClass().getSimpleName()));
+
         Map<String, Object> body = new HashMap<>();
         body.put("status", 500);
         body.put("error", "Internal server error");

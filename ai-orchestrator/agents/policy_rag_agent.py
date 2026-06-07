@@ -1,17 +1,11 @@
 """
-Policy RAG Agent
-----------------
-Retrieves relevant underwriting/fraud policy chunks from Qdrant,
-then asks Llama 3.1 to identify applicable rules for this application.
-
-RAG with local embeddings (nomic-embed-text via Ollama):
-  - No OpenAI embedding costs
-  - nomic-embed-text is purpose-built for retrieval, 768-dim vectors
-  - Qdrant cosine similarity search
+Policy RAG agent.
 """
 import json
 import time
+
 import structlog
+
 from agents.state import GraphState
 from llm.factory import get_llm
 from rag.retriever import QdrantRetriever
@@ -53,7 +47,6 @@ def policy_rag_agent(state: GraphState) -> dict:
 
     logger.info("policy_rag_agent start", correlation_id=corr)
 
-    # Build semantic search query from application signals
     query = (
         f"credit score {app.creditScore} "
         f"utilization {app.utilization}% "
@@ -66,18 +59,22 @@ def policy_rag_agent(state: GraphState) -> dict:
         chunks = retriever.retrieve(query, k=4)
 
         if not chunks:
-            logger.warning("policy_rag_agent: no chunks retrieved",
-                           correlation_id=corr)
-            return {"policy_context": {
-                "policy_applicable": False,
-                "rules": [],
-                "action": "MANUAL_REVIEW",
-                "citations": [],
-            }}
+            logger.warning("policy_rag_agent: no chunks retrieved", correlation_id=corr)
+            return {
+                "policy_context": {
+                    "policy_applicable": False,
+                    "rules": [],
+                    "action": "MANUAL_REVIEW",
+                    "citations": [],
+                }
+            }
 
-        policy_text = "\n\n".join(f"[Chunk {i+1}]: {c}" for i, c in enumerate(chunks))
-        logger.info("policy_rag_agent retrieved chunks",
-                    correlation_id=corr, chunk_count=len(chunks))
+        policy_text = "\n\n".join(f"[Chunk {i + 1}]: {chunk}" for i, chunk in enumerate(chunks))
+        logger.info(
+            "policy_rag_agent retrieved chunks",
+            correlation_id=corr,
+            chunk_count=len(chunks),
+        )
 
         prompt = POLICY_PROMPT.format(
             credit_score=app.creditScore,
@@ -92,16 +89,25 @@ def policy_rag_agent(state: GraphState) -> dict:
         result = json.loads(raw)
 
         latency = round(time.time() - start, 2)
-        logger.info("policy_rag_agent complete", correlation_id=corr,
-                    action=result.get("action"), latency_s=latency)
+        logger.info(
+            "policy_rag_agent complete",
+            correlation_id=corr,
+            action=result.get("action"),
+            latency_s=latency,
+        )
         return {"policy_context": result}
 
-    except Exception as e:
-        logger.error("policy_rag_agent failed — fallback",
-                     correlation_id=corr, error=str(e))
-        return {"policy_context": {
-            "policy_applicable": False,
-            "rules": [],
-            "action": "MANUAL_REVIEW",
-            "citations": [],
-        }}
+    except Exception as exc:
+        logger.error(
+            "policy_rag_agent failed - fallback",
+            correlation_id=corr,
+            error_type=type(exc).__name__,
+        )
+        return {
+            "policy_context": {
+                "policy_applicable": False,
+                "rules": [],
+                "action": "MANUAL_REVIEW",
+                "citations": [],
+            }
+        }

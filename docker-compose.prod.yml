@@ -1,0 +1,94 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Production overrides — apply on top of docker-compose.yml:
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Changes:
+#   - Resource limits (CPU + memory) on every service
+#   - No debug ports exposed
+#   - Restart policies: always
+#   - Grafana admin password from env (override GRAFANA_PASSWORD)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  postgres:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  zookeeper:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  kafka:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  qdrant:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  prometheus:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  grafana:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+
+  decision-api:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    # Remove debug ports in prod
+    ports:
+      - "8080:8080"
+
+  ai-orchestrator:
+    restart: always
+    command:
+      - uvicorn
+      - main:app
+      - "--host=0.0.0.0"
+      - "--port=8000"
+      - "--workers=2"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  # Init containers don't need limits — they exit immediately
+  db-migrate:
+    restart: "no"
+
+  policy-ingest:
+    restart: "no"

@@ -1,18 +1,11 @@
 """
-Credit Risk Agent
------------------
-Analyses credit score, utilization, and delinquencies.
-Returns structured JSON risk assessment.
-
-Llama 3.1 JSON prompting notes:
-  - Be VERY explicit: "Return ONLY a JSON object. No explanation. No markdown."
-  - List the exact fields and types you expect
-  - Low temperature (0.0) ensures consistent structured output
-  - format="json" in Ollama enforces JSON token sampling
+Credit risk agent.
 """
 import json
 import time
+
 import structlog
+
 from agents.state import GraphState
 from llm.factory import get_llm
 
@@ -46,8 +39,7 @@ def credit_agent(state: GraphState) -> dict:
     app = state["application"]
     corr = state["correlation_id"]
 
-    logger.info("credit_agent start", correlation_id=corr,
-                credit_score=app.creditScore, utilization=app.utilization)
+    logger.info("credit_agent start", correlation_id=corr)
 
     prompt = CREDIT_PROMPT.format(
         credit_score=app.creditScore,
@@ -60,23 +52,30 @@ def credit_agent(state: GraphState) -> dict:
         raw = llm.invoke(prompt)
         result = json.loads(raw)
 
-        # Validate required fields — Llama occasionally omits a key
         required = {"riskLevel", "reason", "score", "keyFactors"}
         if not required.issubset(result.keys()):
             raise ValueError(f"Missing fields in LLM response: {required - result.keys()}")
 
         latency = round(time.time() - start, 2)
-        logger.info("credit_agent complete", correlation_id=corr,
-                    risk_level=result["riskLevel"], latency_s=latency)
+        logger.info(
+            "credit_agent complete",
+            correlation_id=corr,
+            risk_level=result["riskLevel"],
+            latency_s=latency,
+        )
         return {"credit_result": result}
 
-    except Exception as e:
-        logger.error("credit_agent failed — using fallback",
-                     correlation_id=corr, error=str(e))
-        # Fail-safe: treat as HIGH risk → will route to MANUAL_REVIEW
-        return {"credit_result": {
-            "riskLevel": "HIGH",
-            "reason": f"Credit agent error — fallback applied: {str(e)}",
-            "score": 1.0,
-            "keyFactors": ["agent_error_fallback"],
-        }}
+    except Exception as exc:
+        logger.error(
+            "credit_agent failed - using fallback",
+            correlation_id=corr,
+            error_type=type(exc).__name__,
+        )
+        return {
+            "credit_result": {
+                "riskLevel": "HIGH",
+                "reason": "Credit agent fallback applied after processing error",
+                "score": 1.0,
+                "keyFactors": ["agent_error_fallback"],
+            }
+        }

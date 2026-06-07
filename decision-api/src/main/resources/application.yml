@@ -32,10 +32,12 @@ management:
       prometheus:
         enabled: true
 
-# Logging
+# Logging — JSON format defined in logback-spring.xml (auto-detected by Spring Boot).
+# Levels here are the runtime-overridable defaults; logback-spring.xml also sets them
+# as fallback but application.yml takes precedence when both are present.
 logging:
+  config: classpath:logback-spring.xml
   level:
     com.citi.creditdecision: DEBUG
     org.springframework.kafka: INFO
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [correlationId=%X{correlationId}] %logger{36} - %msg%n"
+    org.apache.kafka: WARN

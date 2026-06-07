@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ai-orchestrator
+    static_configs:
+      - targets: ["ai-orchestrator:8000"]
+    metrics_path: /metrics
+
+  - job_name: decision-api
+    static_configs:
+      - targets: ["decision-api:8080"]
+    metrics_path: /actuator/prometheus
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
