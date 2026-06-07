@@ -1,0 +1,5 @@
+version: "1.0.0"
+effective_date: "2026-06-07"
+author: "Credit Technology — AI/ML Engineering"
+changelog:
+  - "v1.0.0: Initial strategy — thresholds extracted from hardcoded agent logic"

@@ -8,9 +8,11 @@ import structlog
 
 from agents.state import GraphState
 from llm.factory import get_llm
+from rules.engine import get_rules_engine
 
 logger = structlog.get_logger()
 
+# Threshold placeholders are filled at call time from fraud_rules.yaml prompt_context.
 FRAUD_PROMPT = """\
 You are a fraud analyst for a fintech company. Analyze this application for fraud risk.
 
@@ -28,8 +30,8 @@ Return ONLY a JSON object with exactly these fields:
 }}
 
 Rules:
-- fraudRisk HIGH if: address_mismatch is true AND delinquencies >= 2
-- fraudRisk MEDIUM if: address_mismatch is true OR delinquencies >= 1
+- fraudRisk HIGH if: address_mismatch is true AND delinquencies >= {delinq_combined_threshold}
+- fraudRisk MEDIUM if: address_mismatch is true OR delinquencies >= {delinq_any_threshold}
 - fraudRisk LOW if: address_mismatch is false AND delinquencies == 0
 - recommendAction DECLINE only if fraudRisk HIGH and strong indicators
 """
@@ -42,10 +44,14 @@ def fraud_agent(state: GraphState) -> dict:
 
     logger.info("fraud_agent start", correlation_id=corr)
 
+    engine = get_rules_engine()
+    ctx = engine.get_fraud_prompt_context()
     prompt = FRAUD_PROMPT.format(
         address_mismatch=str(app.addressMismatch).lower(),
         delinquencies=app.delinquencies or 0,
         channel=app.channel or "WEB",
+        delinq_combined_threshold=ctx.get("delinq_combined_threshold", 2),
+        delinq_any_threshold=ctx.get("delinq_any_threshold", 1),
     )
 
     try:

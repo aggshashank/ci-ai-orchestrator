@@ -10,16 +10,9 @@ import structlog
 
 from agents.state import GraphState
 from llm.factory import get_llm
+from rules.engine import get_rules_engine
 
 logger = structlog.get_logger()
-
-ADVERSE_ACTION_CODES = {
-    "low_credit_score": ("AA01", "Credit score below minimum threshold"),
-    "high_utilization": ("AA04", "Revolving credit utilization too high"),
-    "address_mismatch": ("AA07", "Address verification failed"),
-    "delinquencies": ("AA09", "Recent delinquencies on credit report"),
-    "policy_threshold": ("AA12", "Application does not meet policy criteria"),
-}
 
 EXPLAIN_PROMPT = """\
 You are a compliance officer writing an explanation for a credit card decision.
@@ -42,19 +35,29 @@ Write a clear, professional explanation. Return ONLY a JSON object:
 
 
 def _derive_adverse_codes(state: GraphState) -> list[dict]:
-    codes = []
     app = state["application"]
-    if app.creditScore < 580:
-        codes.append(ADVERSE_ACTION_CODES["low_credit_score"])
-    if app.utilization > 80:
-        codes.append(ADVERSE_ACTION_CODES["high_utilization"])
-    if app.addressMismatch:
-        codes.append(ADVERSE_ACTION_CODES["address_mismatch"])
-    if (app.delinquencies or 0) > 0:
-        codes.append(ADVERSE_ACTION_CODES["delinquencies"])
-    if state.get("policy_context", {}).get("policy_applicable"):
-        codes.append(ADVERSE_ACTION_CODES["policy_threshold"])
-    return [{"code": code, "description": description} for code, description in codes]
+    engine = get_rules_engine()
+
+    # Evaluate all rule sets against this application's signals to collect ECOA codes.
+    credit_matches = engine.evaluate_credit(
+        app.creditScore, app.utilization, app.delinquencies or 0
+    )
+    fraud_matches = engine.evaluate_fraud(
+        app.addressMismatch, app.delinquencies or 0, app.channel or "WEB"
+    )
+
+    seen: set[str] = set()
+    codes: list[dict] = []
+    for match in credit_matches + fraud_matches:
+        for code in match.ecoa_codes:
+            if code not in seen:
+                seen.add(code)
+                codes.append({"code": code, "description": match.rule_name.replace("_", " ")})
+
+    if state.get("policy_context", {}).get("policy_applicable") and "AA12" not in seen:
+        codes.append({"code": "AA12", "description": "Application does not meet policy criteria"})
+
+    return codes
 
 
 async def _persist_decision(audit_record: dict) -> None:
@@ -129,6 +132,7 @@ def explainability_agent(state: GraphState) -> dict:
         "recommendation": decision.get("recommendation"),
         "confidence": decision.get("confidence"),
         "composite_score": decision.get("composite_score", 0.0),
+        "strategy_version": decision.get("strategy_version", get_rules_engine().strategy_version),
         "application": state["application"].model_dump(),
         "credit_result": credit,
         "fraud_result": fraud,

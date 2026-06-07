@@ -1,0 +1,15 @@
+version: "1.0.0"
+
+# Agent signal weights — must sum to 1.0
+weights:
+  credit: 0.45
+  fraud: 0.30
+  policy: 0.25
+
+# composite_score routing thresholds
+# composite < approve_below  → APPROVE
+# composite > decline_above  → DECLINE
+# between the two            → MANUAL_REVIEW
+thresholds:
+  approve_below: 0.35
+  decline_above: 0.65

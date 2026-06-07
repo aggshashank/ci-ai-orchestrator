@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # Policy docs
     policy_docs_path: str = "../policy-documents"
 
+    # Rules engine
+    strategy_version: str = "v1.0.0"   # subdirectory under strategies_dir to load
+    strategies_dir: str = "strategies"  # relative to ai-orchestrator/
+    redis_url: str = ""                 # empty = no Redis, use file cache only
+    rules_cache_ttl: int = 300          # seconds; informational for future TTL-aware loader
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

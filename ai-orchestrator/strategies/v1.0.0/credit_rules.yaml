@@ -1,0 +1,74 @@
+version: "1.0.0"
+
+# Named threshold values injected into LLM prompts by credit_agent.py.
+# Change a value here and the LLM reasoning boundary updates automatically.
+prompt_context:
+  score_decline: 580         # hard-decline below this score
+  score_fair_max: 669        # top of FAIR band
+  score_good_min: 670        # GOOD band starts here
+  score_very_good_min: 740   # VERY GOOD band starts here
+  util_high: 80              # hard-decline utilization threshold (%)
+  util_medium: 50            # MEDIUM risk utilization threshold (%)
+  delinq_high: 3             # hard-decline delinquency count
+  delinq_medium: 1           # MEDIUM risk delinquency count
+
+rules:
+  # ── Priority 1: hard declines ──────────────────────────────────────────────
+  - name: auto_decline_low_score
+    condition: "credit_score < {threshold}"
+    threshold: 580
+    action: DECLINE
+    ecoa_code: AA01
+    priority: 1
+
+  - name: auto_decline_high_utilization
+    condition: "utilization > {util_threshold}"
+    util_threshold: 80
+    action: DECLINE
+    ecoa_code: AA04
+    priority: 1
+
+  - name: auto_decline_high_delinquencies
+    condition: "delinquencies >= {delinq_threshold}"
+    delinq_threshold: 3
+    action: DECLINE
+    ecoa_code: AA09
+    priority: 1
+
+  # ── Priority 2: manual review triggers ────────────────────────────────────
+  - name: manual_review_fair_score
+    condition: "credit_score >= {fair_min} and credit_score < {good_min}"
+    fair_min: 580
+    good_min: 670
+    action: MANUAL_REVIEW
+    priority: 2
+
+  - name: manual_review_high_util_address
+    condition: "utilization > {util_threshold} and address_mismatch == true"
+    util_threshold: 80
+    action: MANUAL_REVIEW
+    ecoa_codes: [AA04, AA07]
+    priority: 2
+
+  # ── Priority 3: medium-risk signals ───────────────────────────────────────
+  - name: medium_utilization
+    condition: "utilization > {medium_threshold}"
+    medium_threshold: 50
+    action: MANUAL_REVIEW
+    ecoa_code: AA04
+    priority: 3
+
+  - name: medium_delinquencies
+    condition: "delinquencies >= {min_delinq}"
+    min_delinq: 1
+    action: MANUAL_REVIEW
+    ecoa_code: AA09
+    priority: 3
+
+  # ── Priority 10: explicit approve (all conditions green) ──────────────────
+  - name: approve_excellent_profile
+    condition: "credit_score >= {good_min} and utilization < {util_medium} and delinquencies == 0"
+    good_min: 670
+    util_medium: 50
+    action: APPROVE
+    priority: 10

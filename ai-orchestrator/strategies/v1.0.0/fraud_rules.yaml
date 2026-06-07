@@ -1,0 +1,29 @@
+version: "1.0.0"
+
+# Named threshold values injected into LLM prompts by fraud_agent.py.
+prompt_context:
+  delinq_combined_threshold: 2    # delinquencies required alongside address mismatch for HIGH fraud
+  delinq_any_threshold: 1         # any delinquency triggers MEDIUM fraud signal
+
+rules:
+  # ── Priority 1: hard fraud signals ────────────────────────────────────────
+  - name: fraud_high_combined
+    condition: "address_mismatch == true and delinquencies >= {delinq_threshold}"
+    delinq_threshold: 2
+    action: DECLINE
+    ecoa_codes: [AA07, AA09]
+    priority: 1
+
+  # ── Priority 2: individual medium signals ─────────────────────────────────
+  - name: fraud_medium_address_mismatch
+    condition: "address_mismatch == true"
+    action: MANUAL_REVIEW
+    ecoa_code: AA07
+    priority: 2
+
+  - name: fraud_medium_delinquency
+    condition: "delinquencies >= {delinq_threshold}"
+    delinq_threshold: 1
+    action: MANUAL_REVIEW
+    ecoa_code: AA09
+    priority: 2
