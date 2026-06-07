@@ -7,7 +7,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
-from llm_provider import get_embeddings
+from llm.embeddings import get_embeddings
 from config import get_settings
 
 logger = structlog.get_logger()

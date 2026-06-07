@@ -7,7 +7,7 @@ import json
 import time
 import structlog
 from agents.state import GraphState
-from llm_provider import get_llm
+from llm.factory import get_llm
 
 logger = structlog.get_logger()
 

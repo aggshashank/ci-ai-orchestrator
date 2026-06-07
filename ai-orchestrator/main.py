@@ -1,92 +1,89 @@
 """
 AI Orchestrator — FastAPI entry point
 """
-import json
 import threading
 import structlog
-from datetime import datetime, timezone
-from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
-from llm_provider import check_ollama_health
+
+from llm.factory import check_llm_health
+from db.session import init_db, close_db
+from db.repository import DecisionRepository
+from db.session import get_session
 from messaging.consumer import start_consumer
 from config import get_settings
 
 logger = structlog.get_logger()
 settings = get_settings()
-AUDIT_LOG = Path("audit_log.jsonl")
 
-app = FastAPI(title="AI Credit Decisioning Orchestrator", version="1.0.0")
 
-# ── Prometheus metrics ────────────────────────────────────────────────────────
-AGENT_LATENCY    = Histogram("agent_execution_seconds", "Agent latency", ["agent"])
-RECOMMENDATION   = Counter("recommendation_total", "Recommendations", ["recommendation"])
-TOKEN_USAGE      = Counter("llm_token_usage_total", "Token usage", ["agent", "token_type"])
-MANUAL_REVIEW_Q  = Gauge("manual_review_pending", "Pending manual reviews")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await init_db()
 
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
-
-# ── Startup ───────────────────────────────────────────────────────────────────
-@app.on_event("startup")
-def startup():
-    health = check_ollama_health()
+    health = check_llm_health()
     if health["status"] != "ok":
-        logger.warning("Ollama not fully ready", details=health)
+        logger.warning("LLM provider not fully ready", details=health)
     else:
-        logger.info("Ollama ready", model=settings.ollama_model,
-                    embed_model=settings.ollama_embed_model)
+        logger.info("LLM provider ready", provider=settings.llm_provider)
 
     thread = threading.Thread(target=start_consumer, daemon=True)
     thread.start()
     logger.info("Kafka consumer thread started")
 
-# ── Health ────────────────────────────────────────────────────────────────────
+    yield
+
+    # Shutdown
+    await close_db()
+
+
+app = FastAPI(
+    title="AI Credit Decisioning Orchestrator",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# ── Prometheus metrics ─────────────────────────────────────────────────────────
+AGENT_LATENCY   = Histogram("agent_execution_seconds", "Agent latency", ["agent"])
+RECOMMENDATION  = Counter("recommendation_total", "Recommendations", ["recommendation"])
+TOKEN_USAGE     = Counter("llm_token_usage_total", "Token usage", ["agent", "token_type"])
+MANUAL_REVIEW_Q = Gauge("manual_review_pending", "Pending manual reviews")
+
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+
+# ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
-    ollama = check_ollama_health()
-    return {"status": "ok", "ollama": ollama}
-
-# ── Review queue helpers ──────────────────────────────────────────────────────
-def _load_audit_records() -> list[dict]:
-    if not AUDIT_LOG.exists():
-        return []
-    records = []
-    for line in AUDIT_LOG.read_text().splitlines():
-        line = line.strip()
-        if line:
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-    return records
+    llm = check_llm_health()
+    return {"status": "ok", "llm": llm}
 
 
-def _save_audit_records(records: list[dict]):
-    with open(AUDIT_LOG, "w") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
-
-# ── HITL endpoints ────────────────────────────────────────────────────────────
+# ── HITL endpoints ─────────────────────────────────────────────────────────────
 @app.get("/api/v1/review-queue")
-def review_queue():
-    records = _load_audit_records()
-    pending = [
-        {
-            "correlationId": r["correlation_id"],
-            "receivedAt": r["timestamp"],
-            "recommendation": r["recommendation"],
-            "confidence": r["confidence"],
-            "summary": r.get("explanation", {}).get("plain_language_summary", ""),
-            "adverse_codes": [c["code"] for c in
-                              r.get("explanation", {}).get("adverse_action_codes", [])],
-        }
-        for r in records
-        if r.get("recommendation") == "MANUAL_REVIEW" and r.get("human_decision") is None
-    ]
+async def review_queue():
+    async with get_session() as session:
+        repo = DecisionRepository(session)
+        pending = await repo.get_pending_review_queue()
+
     MANUAL_REVIEW_Q.set(len(pending))
-    return {"count": len(pending), "items": pending}
+
+    items = [
+        {
+            "correlationId": d.correlation_id,
+            "receivedAt": d.created_at.isoformat(),
+            "recommendation": d.recommendation,
+            "confidence": d.confidence,
+            "summary": "",          # fetched below if explanation agent_output present
+            "adverse_codes": [a.code for a in d.adverse_actions],
+        }
+        for d in pending
+    ]
+    return {"count": len(items), "items": items}
 
 
 class ReviewDecision(BaseModel):
@@ -96,25 +93,22 @@ class ReviewDecision(BaseModel):
 
 
 @app.post("/api/v1/review/{correlation_id}/decision")
-def submit_decision(correlation_id: str, body: ReviewDecision):
+async def submit_decision(correlation_id: str, body: ReviewDecision):
     if body.decision not in ("APPROVE", "DECLINE"):
         raise HTTPException(400, "decision must be APPROVE or DECLINE")
 
-    records = _load_audit_records()
-    updated = False
-    for r in records:
-        if r["correlation_id"] == correlation_id:
-            r["human_decision"] = body.decision
-            r["reviewer"] = body.reviewer
-            r["reviewer_notes"] = body.notes
-            r["decided_at"] = datetime.now(timezone.utc).isoformat()
-            updated = True
-            break
+    async with get_session() as session:
+        repo = DecisionRepository(session)
+        updated = await repo.apply_human_decision(
+            correlation_id=correlation_id,
+            human_decision=body.decision,
+            reviewer=body.reviewer,
+            reviewer_notes=body.notes,
+        )
 
     if not updated:
         raise HTTPException(404, f"correlationId {correlation_id} not found")
 
-    _save_audit_records(records)
     RECOMMENDATION.labels(recommendation=f"HUMAN_{body.decision}").inc()
     logger.info("Human decision recorded", correlation_id=correlation_id,
                 decision=body.decision, reviewer=body.reviewer)
@@ -123,9 +117,33 @@ def submit_decision(correlation_id: str, body: ReviewDecision):
 
 
 @app.get("/api/v1/audit/{correlation_id}")
-def get_audit(correlation_id: str):
-    records = _load_audit_records()
-    for r in records:
-        if r["correlation_id"] == correlation_id:
-            return r
-    raise HTTPException(404, f"correlationId {correlation_id} not found")
+async def get_audit(correlation_id: str):
+    async with get_session() as session:
+        repo = DecisionRepository(session)
+        decision = await repo.get_by_correlation_id(correlation_id)
+
+    if not decision:
+        raise HTTPException(404, f"correlationId {correlation_id} not found")
+
+    # Reconstruct the audit shape expected by consumers
+    agent_map = {ao.agent_name: ao.output_json for ao in decision.agent_outputs}
+    return {
+        "correlation_id": decision.correlation_id,
+        "timestamp": decision.created_at.isoformat(),
+        "recommendation": decision.recommendation,
+        "confidence": decision.confidence,
+        "composite_score": decision.composite_score,
+        "application": decision.application_json,
+        "credit_result": agent_map.get("credit_agent", {}),
+        "fraud_result": agent_map.get("fraud_agent", {}),
+        "policy_context": agent_map.get("policy_rag_agent", {}),
+        "explanation": agent_map.get("explainability_agent", {}),
+        "adverse_actions": [
+            {"code": a.code, "description": a.description}
+            for a in decision.adverse_actions
+        ],
+        "human_decision": decision.human_decision,
+        "reviewer": decision.reviewer,
+        "reviewer_notes": decision.reviewer_notes,
+        "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
+    }

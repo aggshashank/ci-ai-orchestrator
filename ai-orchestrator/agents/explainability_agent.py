@@ -2,26 +2,25 @@
 Explainability Agent
 --------------------
 Generates audit-friendly, ECOA-compliant explanations.
-Writes to audit_log.jsonl and publishes MANUAL_REVIEW events to Kafka.
+Persists the full decision record to PostgreSQL via DecisionRepository.
 """
+import asyncio
 import json
 import time
 import structlog
 from datetime import datetime, timezone
-from pathlib import Path
 from agents.state import GraphState
-from llm_provider import get_llm
+from llm.factory import get_llm
 
 logger = structlog.get_logger()
-AUDIT_LOG = Path("audit_log.jsonl")
 
 # ECOA-style adverse action codes
 ADVERSE_ACTION_CODES = {
-    "low_credit_score":      ("AA01", "Credit score below minimum threshold"),
-    "high_utilization":      ("AA04", "Revolving credit utilization too high"),
-    "address_mismatch":      ("AA07", "Address verification failed"),
-    "delinquencies":         ("AA09", "Recent delinquencies on credit report"),
-    "policy_threshold":      ("AA12", "Application does not meet policy criteria"),
+    "low_credit_score":  ("AA01", "Credit score below minimum threshold"),
+    "high_utilization":  ("AA04", "Revolving credit utilization too high"),
+    "address_mismatch":  ("AA07", "Address verification failed"),
+    "delinquencies":     ("AA09", "Recent delinquencies on credit report"),
+    "policy_threshold":  ("AA12", "Application does not meet policy criteria"),
 }
 
 EXPLAIN_PROMPT = """\
@@ -47,9 +46,6 @@ Write a clear, professional explanation. Return ONLY a JSON object:
 def _derive_adverse_codes(state: GraphState) -> list[dict]:
     codes = []
     app = state["application"]
-    credit = state.get("credit_result", {})
-    fraud = state.get("fraud_result", {})
-
     if app.creditScore < 580:
         codes.append(ADVERSE_ACTION_CODES["low_credit_score"])
     if app.utilization > 80:
@@ -60,8 +56,20 @@ def _derive_adverse_codes(state: GraphState) -> list[dict]:
         codes.append(ADVERSE_ACTION_CODES["delinquencies"])
     if state.get("policy_context", {}).get("policy_applicable"):
         codes.append(ADVERSE_ACTION_CODES["policy_threshold"])
-
     return [{"code": c[0], "description": c[1]} for c in codes]
+
+
+async def _persist_decision(audit_record: dict) -> None:
+    """Write the full audit record to PostgreSQL (best-effort; never raises)."""
+    try:
+        from db.session import get_session
+        from db.repository import DecisionRepository
+        async with get_session() as session:
+            repo = DecisionRepository(session)
+            await repo.save_decision(audit_record)
+    except Exception as e:
+        logger.error("decision_persist failed — decision NOT stored in DB",
+                     error=str(e), correlation_id=audit_record.get("correlation_id"))
 
 
 def explainability_agent(state: GraphState) -> dict:
@@ -107,26 +115,30 @@ def explainability_agent(state: GraphState) -> dict:
         "signal_weights": decision.get("signal_weights", {}),
     }
 
-    # --- Write audit record ---
     audit_record = {
         "correlation_id": corr,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "recommendation": decision.get("recommendation"),
         "confidence": decision.get("confidence"),
-        "composite_score": decision.get("composite_score"),
+        "composite_score": decision.get("composite_score", 0.0),
         "application": state["application"].model_dump(),
         "credit_result": credit,
         "fraud_result": fraud,
         "policy_context": policy,
         "risk_decision": decision,
         "explanation": explanation,
-        "human_decision": None,   # populated via POST /review/{id}/decision
-        "reviewer": None,
-        "decided_at": None,
     }
 
-    with open(AUDIT_LOG, "a") as f:
-        f.write(json.dumps(audit_record) + "\n")
+    # Persist to PostgreSQL — run async persist in the current event loop if available,
+    # otherwise create one (handles both FastAPI and Kafka consumer call paths).
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(_persist_decision(audit_record))
+        else:
+            loop.run_until_complete(_persist_decision(audit_record))
+    except Exception as e:
+        logger.error("explainability_agent persist dispatch failed", error=str(e))
 
     latency = round(time.time() - start, 2)
     logger.info("explainability_agent complete", correlation_id=corr,
