@@ -1,0 +1,11 @@
+version: "1.1.0"
+
+# Challenger variant: credit signal gets 5pp more weight; fraud reduced by 5pp.
+weights:
+  credit: 0.50
+  fraud: 0.25
+  policy: 0.25
+
+thresholds:
+  approve_below: 0.35
+  decline_above: 0.65

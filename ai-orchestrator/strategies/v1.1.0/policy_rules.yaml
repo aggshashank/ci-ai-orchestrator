@@ -1,0 +1,32 @@
+version: "1.1.0"
+
+# Challenger: same policy rules as v1.0.0.
+rules:
+  - name: policy_decline_combined_risk
+    condition: "credit_score < {score_threshold} and utilization > {util_threshold}"
+    score_threshold: 620
+    util_threshold: 70
+    action: DECLINE
+    ecoa_code: AA12
+    priority: 1
+
+  - name: policy_review_borderline_score
+    condition: "credit_score >= {fair_min} and credit_score < {fair_max}"
+    fair_min: 580
+    fair_max: 640
+    action: MANUAL_REVIEW
+    ecoa_code: AA12
+    priority: 2
+
+  - name: policy_review_address_mismatch
+    condition: "address_mismatch == true"
+    action: MANUAL_REVIEW
+    ecoa_code: AA07
+    priority: 2
+
+  - name: policy_review_elevated_utilization
+    condition: "utilization > {util_threshold}"
+    util_threshold: 60
+    action: MANUAL_REVIEW
+    ecoa_code: AA04
+    priority: 3

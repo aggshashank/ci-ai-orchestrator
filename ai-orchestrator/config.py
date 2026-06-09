@@ -52,6 +52,19 @@ class Settings(BaseSettings):
     redis_url: str = ""                 # empty = no Redis, use file cache only
     rules_cache_ttl: int = 300          # seconds; informational for future TTL-aware loader
 
+    # Experimentation (champion/challenger)
+    experiment_enabled: bool = False
+    experiment_challenger_strategy: str = ""      # e.g. "v1.1.0"
+    experiment_challenger_percentage: int = 10    # % of traffic routed to challenger
+    experiment_significance_threshold: float = 0.05
+    experiment_min_sample_size: int = 100
+
+    # Prompt versions — set via env var to hot-swap without redeployment
+    credit_agent_prompt_version: str = "v1"
+    fraud_agent_prompt_version: str = "v1"
+    policy_rag_agent_prompt_version: str = "v1"
+    explainability_agent_prompt_version: str = "v1"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

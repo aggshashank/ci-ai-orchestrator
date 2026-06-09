@@ -7,38 +7,12 @@ import time
 import structlog
 
 from agents.state import GraphState
+from config import get_settings
 from llm.factory import get_llm
-from rules.engine import get_rules_engine
+from prompts.registry import get_prompt_registry
+from rules.engine import get_engine_for_state
 
 logger = structlog.get_logger()
-
-# Threshold placeholders are filled at call time from credit_rules.yaml prompt_context.
-CREDIT_PROMPT = """\
-You are a credit risk analyst for a fintech company. Analyze this credit application data.
-
-Application data:
-- Credit Score: {credit_score} (FICO range 300-850; below {score_decline}=poor, \
-{score_decline}-{score_fair_max}=fair, {score_good_min}-{score_very_good_min_minus1}=good, \
-{score_very_good_min}+=very good)
-- Revolving Utilization: {utilization}% (above 30% is concerning; above {util_high}% is high risk)
-- Delinquencies (past 2 years): {delinquencies}
-
-Return ONLY a JSON object with exactly these fields:
-{{
-  "riskLevel": "HIGH" or "MEDIUM" or "LOW",
-  "reason": "one sentence explanation",
-  "score": a float between 0.0 (lowest risk) and 1.0 (highest risk),
-  "keyFactors": ["factor1", "factor2"]
-}}
-
-Rules:
-- riskLevel HIGH if: credit score < {score_decline} OR utilization > {util_high} OR \
-delinquencies >= {delinq_high}
-- riskLevel MEDIUM if: credit score {score_decline}-{score_fair_max} OR \
-utilization {util_medium}-{util_high} OR delinquencies {delinq_medium}-{delinq_high}
-- riskLevel LOW if: credit score >= {score_good_min} AND utilization < {util_medium} \
-AND delinquencies == 0
-"""
 
 
 def credit_agent(state: GraphState) -> dict:
@@ -48,9 +22,12 @@ def credit_agent(state: GraphState) -> dict:
 
     logger.info("credit_agent start", correlation_id=corr)
 
-    engine = get_rules_engine()
+    engine = get_engine_for_state(state)
     ctx = engine.get_credit_prompt_context()
-    prompt = CREDIT_PROMPT.format(
+
+    settings = get_settings()
+    template = get_prompt_registry().get("credit_agent", settings.credit_agent_prompt_version)
+    prompt = template.format(
         credit_score=app.creditScore,
         utilization=app.utilization,
         delinquencies=app.delinquencies or 0,

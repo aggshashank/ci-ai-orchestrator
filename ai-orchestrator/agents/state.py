@@ -23,5 +23,9 @@ class GraphState(TypedDict, total=False):
     # Explainability (final node)
     explanation: dict         # {plain_language_summary, adverse_action_codes,
                               #  audit_narrative, policy_citations, signal_weights}
+    # Experiment routing — set by consumer before graph.invoke()
+    experiment_variant: str     # "champion" | "challenger" | ""
+    prompt_versions: dict       # populated by explainability_agent at final node
+
     # Error propagation
     error: Optional[str]

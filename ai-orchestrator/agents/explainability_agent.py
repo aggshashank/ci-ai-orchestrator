@@ -9,34 +9,17 @@ from datetime import datetime, timezone
 import structlog
 
 from agents.state import GraphState
+from config import get_settings
 from llm.factory import get_llm
-from rules.engine import get_rules_engine
+from prompts.registry import get_prompt_registry
+from rules.engine import get_engine_for_state
 
 logger = structlog.get_logger()
-
-EXPLAIN_PROMPT = """\
-You are a compliance officer writing an explanation for a credit card decision.
-
-Decision: {recommendation}
-Confidence: {confidence}
-
-Signals:
-- Credit risk: {credit_risk} - {credit_reason}
-- Fraud risk: {fraud_risk} - {fraud_reason}
-- Policy rules triggered: {policy_rules}
-
-Write a clear, professional explanation. Return ONLY a JSON object:
-{{
-  "plain_language_summary": "1-2 sentence customer-facing explanation (no jargon)",
-  "audit_narrative": "2-3 sentence internal compliance narrative with specific factors",
-  "recommended_next_steps": "what the customer or underwriter should do next"
-}}
-"""
 
 
 def _derive_adverse_codes(state: GraphState) -> list[dict]:
     app = state["application"]
-    engine = get_rules_engine()
+    engine = get_engine_for_state(state)
 
     # Evaluate all rule sets against this application's signals to collect ECOA codes.
     credit_matches = engine.evaluate_credit(
@@ -91,7 +74,9 @@ def explainability_agent(state: GraphState) -> dict:
     fraud = state.get("fraud_result", {})
     policy = state.get("policy_context", {})
 
-    prompt = EXPLAIN_PROMPT.format(
+    settings = get_settings()
+    template = get_prompt_registry().get("explainability_agent", settings.explainability_agent_prompt_version)
+    prompt = template.format(
         recommendation=decision.get("recommendation", "UNKNOWN"),
         confidence=decision.get("confidence", 0),
         credit_risk=credit.get("riskLevel", "UNKNOWN"),
@@ -126,13 +111,22 @@ def explainability_agent(state: GraphState) -> dict:
         "signal_weights": decision.get("signal_weights", {}),
     }
 
+    prompt_versions = {
+        "credit_agent": settings.credit_agent_prompt_version,
+        "fraud_agent": settings.fraud_agent_prompt_version,
+        "policy_rag_agent": settings.policy_rag_agent_prompt_version,
+        "explainability_agent": settings.explainability_agent_prompt_version,
+    }
+
     audit_record = {
         "correlation_id": corr,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "recommendation": decision.get("recommendation"),
         "confidence": decision.get("confidence"),
         "composite_score": decision.get("composite_score", 0.0),
-        "strategy_version": decision.get("strategy_version", get_rules_engine().strategy_version),
+        "strategy_version": decision.get("strategy_version", get_engine_for_state(state).strategy_version),
+        "experiment_variant": state.get("experiment_variant", ""),
+        "prompt_versions": prompt_versions,
         "application": state["application"].model_dump(),
         "credit_result": credit,
         "fraud_result": fraud,

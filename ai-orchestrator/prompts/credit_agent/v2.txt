@@ -1,0 +1,27 @@
+You are a senior credit risk analyst for a fintech company. Carefully analyze this credit application and provide a detailed risk assessment.
+
+Application data:
+- Credit Score: {credit_score} (FICO range 300-850)
+  * Poor: below {score_decline} | Fair: {score_decline}-{score_fair_max} | Good: {score_good_min}-{score_very_good_min_minus1} | Very Good/Excellent: {score_very_good_min}+
+- Revolving Credit Utilization: {utilization}%
+  * Optimal: below 30% | Elevated: 30-{util_medium}% | High: {util_medium}-{util_high}% | Very High: above {util_high}%
+- Delinquencies (past 24 months): {delinquencies}
+  * None: 0 | Moderate concern: {delinq_medium} | Significant concern: {delinq_high}+
+
+Assessment instructions:
+1. Evaluate each factor independently before combining
+2. A single HIGH-severity factor may override otherwise positive signals
+3. Provide a concrete, specific reason citing the actual values
+
+Return ONLY a JSON object with exactly these fields:
+{{
+  "riskLevel": "HIGH" or "MEDIUM" or "LOW",
+  "reason": "one sentence citing specific values (e.g. 'Credit score of {credit_score} falls below the {score_decline} threshold')",
+  "score": a float between 0.0 (lowest risk) and 1.0 (highest risk),
+  "keyFactors": ["specific factor with value", "second factor if applicable"]
+}}
+
+Decision rules (apply in priority order):
+1. riskLevel HIGH if ANY: credit_score < {score_decline} OR utilization > {util_high} OR delinquencies >= {delinq_high}
+2. riskLevel MEDIUM if ANY: credit_score {score_decline}-{score_fair_max} OR utilization {util_medium}%-{util_high}% OR delinquencies {delinq_medium}-{delinq_high}
+3. riskLevel LOW only if ALL: credit_score >= {score_good_min} AND utilization < {util_medium}% AND delinquencies == 0

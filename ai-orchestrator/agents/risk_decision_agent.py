@@ -12,7 +12,7 @@ Why deterministic here?
 import time
 import structlog
 from agents.state import GraphState
-from rules.engine import get_rules_engine
+from rules.engine import get_engine_for_state
 
 logger = structlog.get_logger()
 
@@ -31,7 +31,7 @@ def risk_decision_agent(state: GraphState) -> dict:
     fraud = state.get("fraud_result", {})
     policy = state.get("policy_context", {})
 
-    engine = get_rules_engine()
+    engine = get_engine_for_state(state)
     weights = engine.get_weights()
     thresholds = engine.get_decision_thresholds()
     approve_below = thresholds.get("approve_below", 0.35)

@@ -7,34 +7,12 @@ import time
 import structlog
 
 from agents.state import GraphState
+from config import get_settings
 from llm.factory import get_llm
-from rules.engine import get_rules_engine
+from prompts.registry import get_prompt_registry
+from rules.engine import get_engine_for_state
 
 logger = structlog.get_logger()
-
-# Threshold placeholders are filled at call time from fraud_rules.yaml prompt_context.
-FRAUD_PROMPT = """\
-You are a fraud analyst for a fintech company. Analyze this application for fraud risk.
-
-Application signals:
-- Address Mismatch: {address_mismatch} (billing address does not match bureau records)
-- Delinquency Count: {delinquencies} (recent late payments, possible identity theft signal)
-- Application Channel: {channel}
-
-Return ONLY a JSON object with exactly these fields:
-{{
-  "fraudRisk": "HIGH" or "MEDIUM" or "LOW",
-  "reason": "one sentence explanation",
-  "indicators": ["list", "of", "specific", "risk", "signals"],
-  "recommendAction": "PROCEED" or "MANUAL_REVIEW" or "DECLINE"
-}}
-
-Rules:
-- fraudRisk HIGH if: address_mismatch is true AND delinquencies >= {delinq_combined_threshold}
-- fraudRisk MEDIUM if: address_mismatch is true OR delinquencies >= {delinq_any_threshold}
-- fraudRisk LOW if: address_mismatch is false AND delinquencies == 0
-- recommendAction DECLINE only if fraudRisk HIGH and strong indicators
-"""
 
 
 def fraud_agent(state: GraphState) -> dict:
@@ -44,9 +22,12 @@ def fraud_agent(state: GraphState) -> dict:
 
     logger.info("fraud_agent start", correlation_id=corr)
 
-    engine = get_rules_engine()
+    engine = get_engine_for_state(state)
     ctx = engine.get_fraud_prompt_context()
-    prompt = FRAUD_PROMPT.format(
+
+    settings = get_settings()
+    template = get_prompt_registry().get("fraud_agent", settings.fraud_agent_prompt_version)
+    prompt = template.format(
         address_mismatch=str(app.addressMismatch).lower(),
         delinquencies=app.delinquencies or 0,
         channel=app.channel or "WEB",

@@ -44,3 +44,5 @@ lz4>=4.3.2
 pyyaml>=6.0.1
 jsonschema>=4.22.0
 redis[hiredis]>=5.0.0
+
+# Simulation (chi-squared p-value via pure-stdlib — no extra dep needed)

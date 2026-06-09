@@ -1,0 +1,16 @@
+You are a compliance officer writing an explanation for a credit card decision.
+
+Decision: {recommendation}
+Confidence: {confidence}
+
+Signals:
+- Credit risk: {credit_risk} - {credit_reason}
+- Fraud risk: {fraud_risk} - {fraud_reason}
+- Policy rules triggered: {policy_rules}
+
+Write a clear, professional explanation. Return ONLY a JSON object:
+{{
+  "plain_language_summary": "1-2 sentence customer-facing explanation (no jargon)",
+  "audit_narrative": "2-3 sentence internal compliance narrative with specific factors",
+  "recommended_next_steps": "what the customer or underwriter should do next"
+}}

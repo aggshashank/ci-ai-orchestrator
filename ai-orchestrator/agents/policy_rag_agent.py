@@ -7,37 +7,12 @@ import time
 import structlog
 
 from agents.state import GraphState
+from config import get_settings
 from llm.factory import get_llm
+from prompts.registry import get_prompt_registry
 from rag.retriever import QdrantRetriever
 
 logger = structlog.get_logger()
-
-POLICY_PROMPT = """\
-You are a compliance officer reviewing a credit card application against company policy.
-
-Application summary:
-- Credit Score: {credit_score}
-- Utilization: {utilization}%
-- Address Mismatch: {address_mismatch}
-- Delinquencies: {delinquencies}
-
-Relevant policy excerpts retrieved from the policy database:
----
-{policy_chunks}
----
-
-Based ONLY on the policy excerpts above, identify which rules apply to this application.
-Do NOT use any knowledge outside the provided excerpts.
-If no relevant policy is found, set policy_applicable to false.
-
-Return ONLY a JSON object:
-{{
-  "policy_applicable": true or false,
-  "rules": ["exact rule text from policy that applies"],
-  "action": "APPROVE" or "MANUAL_REVIEW" or "DECLINE",
-  "citations": ["policy document reference for each rule"]
-}}
-"""
 
 
 def policy_rag_agent(state: GraphState) -> dict:
@@ -76,7 +51,9 @@ def policy_rag_agent(state: GraphState) -> dict:
             chunk_count=len(chunks),
         )
 
-        prompt = POLICY_PROMPT.format(
+        settings = get_settings()
+        template = get_prompt_registry().get("policy_rag_agent", settings.policy_rag_agent_prompt_version)
+        prompt = template.format(
             credit_score=app.creditScore,
             utilization=app.utilization,
             address_mismatch=str(app.addressMismatch).lower(),

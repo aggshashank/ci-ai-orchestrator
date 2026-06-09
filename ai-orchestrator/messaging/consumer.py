@@ -8,6 +8,7 @@ import structlog
 from kafka import KafkaConsumer
 
 from config import get_settings
+from experimentation.router import assign_variant
 from graph.workflow import build_workflow
 from logging_config import bind_correlation_id, clear_log_context
 from messaging.dlq_producer import DlqProducer
@@ -65,9 +66,16 @@ def start_consumer():
                         offset=message.offset,
                     )
 
+                    _settings = get_settings()
+                    variant = ""
+                    if _settings.experiment_enabled and _settings.experiment_challenger_strategy:
+                        variant = assign_variant(corr, _settings.experiment_challenger_percentage)
+
                     state = {
                         "correlation_id": corr,
                         "application": event.application,
+                        "experiment_variant": variant,
+                        "prompt_versions": {},
                     }
 
                     result = graph.invoke(state)

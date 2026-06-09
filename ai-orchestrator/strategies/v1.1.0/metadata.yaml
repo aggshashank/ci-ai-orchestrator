@@ -1,0 +1,5 @@
+version: "1.1.0"
+effective_date: "2026-06-07"
+author: "Credit Technology — AI/ML Engineering"
+changelog:
+  - "v1.1.0: Challenger — raised score_decline from 580 to 600; shifted credit weight to 0.50"

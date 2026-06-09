@@ -215,3 +215,26 @@ def get_rules_engine() -> RulesEngine:
         settings.redis_url,
     )
     return RulesEngine(loader, settings.strategy_version)
+
+
+@lru_cache()
+def get_challenger_engine() -> RulesEngine:
+    from config import get_settings
+
+    settings = get_settings()
+    if not settings.experiment_challenger_strategy:
+        return get_rules_engine()
+    strategies_dir = Path(__file__).parent.parent / settings.strategies_dir
+    loader = get_loader(
+        settings.experiment_challenger_strategy,
+        strategies_dir,
+        settings.redis_url,
+    )
+    return RulesEngine(loader, settings.experiment_challenger_strategy)
+
+
+def get_engine_for_state(state: dict) -> RulesEngine:
+    """Return challenger engine when experiment_variant=='challenger', else champion."""
+    if state.get("experiment_variant") == "challenger":
+        return get_challenger_engine()
+    return get_rules_engine()

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db.models import AdverseAction, AgentOutput, Decision, PolicyRetrieval
+from db.models import AdverseAction, AgentOutput, Decision, PolicyRetrieval, Simulation
 
 logger = structlog.get_logger()
 
@@ -45,6 +45,8 @@ class DecisionRepository:
             strategy_version=settings_ver,
             model_version=model_ver,
             application_json=payload.get("application", {}),
+            experiment_variant=payload.get("experiment_variant") or None,
+            prompt_versions_json=payload.get("prompt_versions") or None,
         )
         self._s.add(decision)
         await self._s.flush()  # populate decision.id before children
@@ -133,6 +135,26 @@ class DecisionRepository:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
+    async def sample_for_simulation(
+        self,
+        sample_size: int,
+        days: Optional[int] = None,
+    ) -> list[Decision]:
+        """Fetch recent decisions with agent_outputs eagerly loaded for simulation scoring."""
+        stmt = (
+            select(Decision)
+            .options(selectinload(Decision.agent_outputs))
+            .order_by(Decision.created_at.desc())
+            .limit(sample_size)
+        )
+        if days is not None:
+            from sqlalchemy import text
+            stmt = stmt.where(
+                Decision.created_at >= text(f"NOW() - INTERVAL '{days} days'")
+            )
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
+
     async def _get_by_correlation_id(
         self, correlation_id: str, eager: bool = False
     ) -> Optional[Decision]:
@@ -145,3 +167,18 @@ class DecisionRepository:
             )
         result = await self._s.execute(stmt)
         return result.scalar_one_or_none()
+
+
+class SimulationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._s = session
+
+    async def get(self, sim_id: str) -> Optional[Simulation]:
+        stmt = select(Simulation).where(Simulation.id == sim_id)
+        result = await self._s.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_recent(self, limit: int = 20) -> list[Simulation]:
+        stmt = select(Simulation).order_by(Simulation.created_at.desc()).limit(limit)
+        result = await self._s.execute(stmt)
+        return list(result.scalars().all())
