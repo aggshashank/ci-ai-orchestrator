@@ -1,21 +1,33 @@
-# AI Credit Card Decisioning POC
+# AI Decisioning Platform
 
-A production-grade **Agentic AI** proof-of-concept that augments traditional rule-based credit card underwriting with multi-agent orchestration, retrieval-augmented generation, explainability, and human-in-loop governance — running entirely on a local machine with no cloud API keys required.
+An open-source **AI Decision Management Platform** — an alternative to commercial platforms like FICO DMP and Pega CDH — built on open standards and local-first infrastructure.
+
+[![CI](https://github.com/your-org/ai-decisioning-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/ai-decisioning-platform/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.11+-green.svg)](https://www.python.org/)
+
+A production-grade agentic AI platform for credit decisioning. It orchestrates multiple specialist LLM agents, retrieval-augmented policy enforcement, deterministic rule engines, adaptive weight retraining, and a full governance stack — all runnable locally with no cloud API keys.
 
 ---
 
-## What This Project Demonstrates
+## What This Platform Provides
 
 | Capability | Implementation |
 |---|---|
-| Multi-agent orchestration | LangGraph `StateGraph` with 5 specialist agents |
+| Multi-agent orchestration | LangGraph `StateGraph` — 8 async specialist agents |
+| 4 decisioning workflows | Origination · Delinquency · Limit Review · Cross-Sell |
 | Retrieval-Augmented Generation | nomic-embed-text embeddings + Qdrant vector search |
-| Event-driven architecture | Apache Kafka with 4 topics + DLQ |
+| Rules engine | YAML-configurable, versioned, hot-swappable |
+| Champion/challenger A/B | Live traffic splitting with statistical reporting |
+| Fairness monitoring | 4/5ths rule disparate impact analysis + HTML reports |
+| Adaptive learning | MLflow-tracked weight retraining from outcome events |
 | Explainability | ECOA-compliant adverse action codes (AA01–AA12) |
 | Human-in-loop | Review queue + underwriter decision API |
-| Observability | Prometheus metrics on both services |
+| Analytics dashboard | React 18 + Recharts — strategy, simulation, fairness, decisions |
+| Rule editor | In-browser YAML editing, impact preview, one-click deploy |
+| Observability | Prometheus metrics, structured logging (structlog) |
 | Local LLM | Ollama (Llama 3) — no OpenAI key needed |
-| Resilience | Fail-safe fallbacks, DLQ routing, manual commit |
+| Resilience | Fail-safe fallbacks, DLQ routing, LLM response cache |
 
 ---
 
@@ -283,7 +295,7 @@ policy_rag    →  action=MANUAL_REVIEW
 
 ## Performance Notes
 
-Agents run sequentially on CPU with a local Llama 3 8B model. Typical latency per agent on CPU is 30–90 seconds. Total pipeline time is approximately 3–6 minutes on a 16 GB RAM machine without a GPU.
+Agents run async with a local Llama 3 8B model. Typical latency per agent on CPU is 30–90 seconds (parallelised across the LangGraph DAG). Total pipeline time is approximately 2–4 minutes on a 16 GB RAM machine without a GPU. The LLM response cache eliminates redundant calls for identical prompts.
 
 To improve inference speed:
 
@@ -291,16 +303,31 @@ To improve inference speed:
 |---|---|---|
 | Smaller model | `OLLAMA_MODEL=phi3` in `.env` | 3–4× faster |
 | NVIDIA GPU | Install CUDA drivers; Ollama auto-detects | 20–30× faster |
-| Groq API | `pip install langchain-groq`, swap `llm_provider.py` | 50–100× faster |
+| Groq API | `pip install langchain-groq`, swap `llm/factory.py` | 50–100× faster |
+
+---
+
+## Documentation
+
+| Guide | Description |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | System design, agent pipeline, caching |
+| [docs/configuration.md](docs/configuration.md) | All environment variables and defaults |
+| [docs/api-reference.md](docs/api-reference.md) | Full REST API reference |
+| [docs/strategy-authoring.md](docs/strategy-authoring.md) | Writing and versioning decision rules |
+| [docs/eval-framework.md](docs/eval-framework.md) | Golden datasets, simulation, regression gates |
+| [docs/deployment-aws.md](docs/deployment-aws.md) | AWS ECS + MSK + RDS deployment |
+| [docs/deployment-azure.md](docs/deployment-azure.md) | Azure Container Apps + Event Hubs deployment |
+| [docs/faq.md](docs/faq.md) | Common questions |
 
 ---
 
 ## Requirements
 
 - Docker Desktop (running)
-- JDK 21
-- Maven 3.9+
+- JDK 21 + Maven 3.9+
 - Python 3.11+
+- Node 20+ (dashboard)
 - Ollama with `llama3:latest` and `nomic-embed-text` pulled
 - 8 GB RAM minimum · 16 GB recommended
 
@@ -308,6 +335,12 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions.
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions welcome — bug reports, feature requests, new policy documents, deployment guides.
+
+---
+
 ## License
 
-For educational and portfolio purposes.
+Apache 2.0 — see [LICENSE](LICENSE).

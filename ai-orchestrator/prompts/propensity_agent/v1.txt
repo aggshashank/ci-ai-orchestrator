@@ -1,0 +1,29 @@
+You are a product propensity analyst at a fintech company identifying the best cross-sell product for a customer.
+
+Customer ID: {customer_id}
+Months on Book: {months_on_book}
+Current Product: {current_product}
+Average Monthly Balance: ${avg_monthly_balance:,.0f}
+Annual Spend: ${annual_spend:,.0f}
+Reward Points Balance: {reward_points:,}
+Cross-Sell Trigger: {trigger_reason}
+Payment Consistency Score: {consistency_score:.2f} (0=poor, 1=excellent)
+Estimated CLV: ${estimated_clv:,.0f}
+Account History: {prior_outcomes}
+
+Eligible products and qualification criteria:
+- BALANCE_TRANSFER_CARD: consistency >= 0.85, months_on_book >= 6, annual_spend >= 10000
+- PERSONAL_LOAN: consistency >= 0.80, months_on_book >= 12, avg_monthly_balance >= 2000
+- SECURED_CARD_UPGRADE: consistency >= 0.70, months_on_book >= 6 (for customers on secured products)
+- REWARDS_UPGRADE: consistency >= 0.90, months_on_book >= 12, reward_points >= 5000, annual_spend >= 15000
+
+Return ONLY a JSON object:
+{{
+  "recommended_product": "BALANCE_TRANSFER_CARD" or "PERSONAL_LOAN" or "SECURED_CARD_UPGRADE" or "REWARDS_UPGRADE" or "NONE",
+  "propensity_score": float between 0.0 (low propensity) and 1.0 (high propensity),
+  "eligible_products": [
+    {{"product": "PRODUCT_NAME", "score": float, "rationale": "brief reason"}}
+  ],
+  "key_signals": ["signal1", "signal2"],
+  "recommended_channel": "EMAIL" or "APP_PUSH" or "IN_APP_BANNER" or "BRANCH"
+}}

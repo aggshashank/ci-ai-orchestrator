@@ -64,6 +64,42 @@ class Settings(BaseSettings):
     fraud_agent_prompt_version: str = "v1"
     policy_rag_agent_prompt_version: str = "v1"
     explainability_agent_prompt_version: str = "v1"
+    limit_review_agent_prompt_version: str = "v1"
+    treatment_agent_prompt_version: str = "v1"
+    propensity_agent_prompt_version: str = "v1"
+
+    # Kafka topics for non-origination workflows
+    kafka_topic_limit_review: str = "limit.review.triggered"
+    kafka_topic_delinquency_treatment: str = "delinquency.treatment.triggered"
+    kafka_topic_cross_sell: str = "cross_sell.eligible"
+
+    # Kafka topics — outcome events (Task 3.3)
+    kafka_topic_outcome_default: str = "outcome.account_default"
+    kafka_topic_outcome_fraud: str = "outcome.fraud_confirmed"
+    kafka_topic_outcome_payoff: str = "outcome.early_payoff"
+
+    # MLflow tracking (Task 3.3)
+    mlflow_tracking_uri: str = "http://localhost:5000"
+    mlflow_experiment_name: str = "ai-decisioning-weights"
+
+    # Drift detection (Task 3.3)
+    drift_default_rate_threshold: float = 0.05   # alert if >5% of APPROVEs default
+    drift_check_interval_seconds: int = 3600     # hourly
+
+    # LLM response cache (Task 3.5)
+    llm_cache_enabled: bool = True
+    llm_cache_max_size: int = 256
+    llm_cache_ttl_seconds: int = 3600
+
+    # Qdrant connection pool (Task 3.5)
+    qdrant_max_connections: int = 10
+    qdrant_timeout_seconds: int = 30
+
+    # Fairness monitoring (Task 3.4)
+    fairness_disparate_impact_threshold: float = 0.8   # 4/5ths rule
+    fairness_min_segment_size: int = 30
+    fairness_alert_slack_webhook: str = ""
+    fairness_alert_email: str = ""
 
     class Config:
         env_file = ".env"

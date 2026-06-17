@@ -1,0 +1,59 @@
+[
+  {
+    "id": "GD-O-001",
+    "description": "Auto-decline: score below hard floor (580)",
+    "input": {"creditScore": 540, "utilization": 45.0, "addressMismatch": false, "delinquencies": 0, "annualIncome": 40000, "channel": "WEB"},
+    "expected_rule_action": "DECLINE",
+    "expected_ecoa_codes": ["AA01"],
+    "notes": "Pure score-based decline; fraud and policy should not override"
+  },
+  {
+    "id": "GD-O-002",
+    "description": "Auto-approve: excellent profile across all signals",
+    "input": {"creditScore": 780, "utilization": 12.0, "addressMismatch": false, "delinquencies": 0, "annualIncome": 95000, "channel": "WEB"},
+    "expected_rule_action": "APPROVE",
+    "expected_ecoa_codes": [],
+    "notes": "All three signals green; composite score should be low"
+  },
+  {
+    "id": "GD-O-003",
+    "description": "Manual review: fair credit score band (580-669)",
+    "input": {"creditScore": 625, "utilization": 38.0, "addressMismatch": false, "delinquencies": 0, "annualIncome": 55000, "channel": "MOBILE"},
+    "expected_rule_action": "MANUAL_REVIEW",
+    "expected_ecoa_codes": ["AA01"],
+    "notes": "Borderline score triggers review; low fraud risk should not escalate to DECLINE"
+  },
+  {
+    "id": "GD-O-004",
+    "description": "Fraud + score combined: address mismatch with delinquencies",
+    "input": {"creditScore": 610, "utilization": 55.0, "addressMismatch": true, "delinquencies": 2, "annualIncome": 48000, "channel": "BRANCH"},
+    "expected_rule_action": "DECLINE",
+    "expected_ecoa_codes": ["AA07", "AA09"],
+    "notes": "Fraud rules fire (address mismatch + 2 delinquencies >= threshold of 2)"
+  },
+  {
+    "id": "GD-O-005",
+    "description": "High utilization with good score: medium risk",
+    "input": {"creditScore": 720, "utilization": 78.0, "addressMismatch": false, "delinquencies": 1, "annualIncome": 72000, "channel": "WEB"},
+    "expected_rule_action": "MANUAL_REVIEW",
+    "expected_ecoa_codes": ["AA04", "AA09"],
+    "notes": "Good score but utilization near high threshold; delinquency adds caution"
+  },
+  {
+    "id": "GD-O-006",
+    "description": "Policy override: combined risk triggers policy decline",
+    "input": {"creditScore": 615, "utilization": 72.0, "addressMismatch": false, "delinquencies": 0, "annualIncome": 35000, "channel": "WEB"},
+    "expected_rule_action": "DECLINE",
+    "expected_ecoa_codes": ["AA12"],
+    "notes": "Policy rule policy_decline_combined_risk fires: score<620 AND util>70"
+  },
+  {
+    "id": "GD-O-007",
+    "description": "Challenger threshold boundary: score between 580-599 (champion DECLINE, challenger MANUAL_REVIEW)",
+    "input": {"creditScore": 590, "utilization": 30.0, "addressMismatch": false, "delinquencies": 0, "annualIncome": 50000, "channel": "WEB"},
+    "expected_rule_action_champion": "DECLINE",
+    "expected_rule_action_challenger": "MANUAL_REVIEW",
+    "expected_ecoa_codes_champion": ["AA01"],
+    "notes": "Key boundary case for champion/challenger experiment: v1.0.0 declines at 580, v1.1.0 at 600"
+  }
+]

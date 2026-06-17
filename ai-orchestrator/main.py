@@ -20,6 +20,8 @@ from db.repository import DecisionRepository, SimulationRepository
 from db.session import close_db, get_session, init_db
 from experimentation.promoter import run_promotion_loop
 from experimentation.tracker import ExperimentTracker, format_stats_response
+from learning.drift_detector import run_drift_loop
+from learning.outcome_consumer import start_outcome_consumer
 from llm.factory import check_llm_health
 from messaging.consumer import start_consumer
 from simulation.engine import create_and_launch
@@ -42,6 +44,9 @@ async def _validate_prompts() -> None:
             "fraud_agent":           settings.fraud_agent_prompt_version,
             "policy_rag_agent":      settings.policy_rag_agent_prompt_version,
             "explainability_agent":  settings.explainability_agent_prompt_version,
+            "limit_review_agent":    settings.limit_review_agent_prompt_version,
+            "treatment_agent":       settings.treatment_agent_prompt_version,
+            "propensity_agent":      settings.propensity_agent_prompt_version,
         })
         logger.info("prompt_versions_validated")
     except FileNotFoundError as exc:
@@ -91,6 +96,20 @@ async def lifespan(app: FastAPI):
     thread = threading.Thread(target=start_consumer, daemon=True)
     thread.start()
     logger.info("Kafka consumer thread started")
+
+    # Outcome event consumer (Task 3.3)
+    outcome_thread = threading.Thread(target=start_outcome_consumer, daemon=True)
+    outcome_thread.start()
+    logger.info("Outcome consumer thread started")
+
+    # Drift detector — hourly check in background (Task 3.3)
+    asyncio.create_task(
+        run_drift_loop(
+            threshold=settings.drift_default_rate_threshold,
+            interval_seconds=settings.drift_check_interval_seconds,
+        )
+    )
+    logger.info("Drift detector started", threshold=settings.drift_default_rate_threshold)
 
     yield
 
@@ -383,6 +402,31 @@ async def get_simulation(sim_id: str):
     }
 
 
+# ── Customer 360 ─────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/customers/{customer_id}/profile")
+async def get_customer_profile(customer_id: str, refresh: bool = False):
+    """
+    Return the cached Customer 360 profile. Pass ?refresh=true to force rebuild
+    from DB history and update the Redis cache.
+    """
+    from config import get_settings as _gs
+    from customer_context.redis_store import CustomerContextStore
+    from customer_context.service import CustomerContextService
+
+    _settings = _gs()
+    store = CustomerContextStore(_settings.redis_url)
+
+    if refresh:
+        store.invalidate(customer_id)
+
+    async with get_session() as session:
+        svc = CustomerContextService(session, store)
+        profile = await svc.get_profile(customer_id)
+
+    return profile.model_dump(mode="json")
+
+
 # ── Champion/Challenger Experiment ───────────────────────────────────────────
 
 @app.get("/api/v1/experiments")
@@ -407,6 +451,87 @@ async def get_experiment_stats():
     }
 
 
+# ── Governance / Fairness Monitoring (Task 3.4) ──────────────────────────────
+
+class FairnessRunRequest(BaseModel):
+    period_days: int = 30
+
+
+@app.post("/api/v1/governance/fairness/run", status_code=202)
+async def run_fairness(body: FairnessRunRequest):
+    """
+    Trigger an on-demand fairness analysis.  The report is stored in PostgreSQL
+    and returned immediately (run is synchronous but fast — SQL aggregate only).
+    """
+    from governance.fairness_monitor import run_fairness_check
+    result = await run_fairness_check(period_days=body.period_days)
+    return result
+
+
+@app.get("/api/v1/governance/fairness/latest")
+async def get_fairness_latest():
+    """Return the most recent fairness report from the database."""
+    from db.session import get_session
+    from sqlalchemy import text
+
+    async with get_session() as session:
+        row = (await session.execute(
+            text("SELECT * FROM fairness_reports ORDER BY created_at DESC LIMIT 1")
+        )).fetchone()
+
+    if not row:
+        raise HTTPException(404, "No fairness reports found — run POST /api/v1/governance/fairness/run first")
+
+    return {
+        "report_date":           row.report_date,
+        "period_days":           row.period_days,
+        "total_decisions":       row.total_decisions,
+        "overall_approval_rate": row.overall_approval_rate,
+        "violations_count":      row.violations_count,
+        "violations":            row.violations_json or [],
+        "created_at":            row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+@app.get("/api/v1/governance/fairness/latest/report", response_class=HTMLResponse)
+async def get_fairness_report_html():
+    from db.session import get_session
+    from sqlalchemy import text
+
+    async with get_session() as session:
+        row = (await session.execute(
+            text("SELECT report_html FROM fairness_reports ORDER BY created_at DESC LIMIT 1")
+        )).fetchone()
+
+    if not row or not row.report_html:
+        raise HTTPException(404, "No fairness report HTML available")
+    return HTMLResponse(content=row.report_html)
+
+
+# ── Adaptive Learning / Drift (Task 3.3) ─────────────────────────────────────
+
+@app.get("/api/v1/governance/drift")
+async def get_drift_status(window_days: int = 30):
+    """Run an on-demand drift check and return the current default rate."""
+    from learning.drift_detector import run_drift_check
+    result = await run_drift_check(
+        threshold=settings.drift_default_rate_threshold,
+        window_days=window_days,
+    )
+    return result
+
+
+@app.post("/api/v1/governance/retrain", status_code=202)
+async def trigger_retrain(window_days: int = 180, dry_run: bool = False):
+    """
+    Trigger quarterly weight retraining.  Returns immediately with a task started
+    confirmation.  Check MLflow for the run artifact.
+    """
+    from learning.model_trainer import run_training
+    result = await run_training(window_days=window_days, dry_run=dry_run)
+    return result
+
+
 @app.get("/api/v1/simulations/{sim_id}/report", response_class=HTMLResponse)
 async def get_simulation_report(sim_id: str):
     async with get_session() as session:
@@ -419,3 +544,176 @@ async def get_simulation_report(sim_id: str):
         raise HTTPException(404, "Report not yet available — simulation may still be running.")
 
     return HTMLResponse(content=sim.report_html)
+
+
+# ── Analytics (Task 4.3) ──────────────────────────────────────────────────────
+
+@app.get("/api/v1/analytics/trends")
+async def analytics_trends(days: int = 30):
+    from analytics.aggregator import approval_rate_by_day
+    from analytics.trends import rolling_default_rate, decision_volume_by_type
+    daily, defaults, volume = await asyncio.gather(
+        approval_rate_by_day(days),
+        rolling_default_rate(),
+        decision_volume_by_type(days),
+    )
+    return {"daily_approval_rate": daily, "rolling_default_rate": defaults, "volume_by_type": volume}
+
+
+@app.get("/api/v1/analytics/segments")
+async def analytics_segments(days: int = 30):
+    from analytics.aggregator import decisions_by_segment
+    return await decisions_by_segment(days)
+
+
+@app.get("/api/v1/analytics/strategy-performance")
+async def analytics_strategy_performance(days: int = 90):
+    from analytics.aggregator import strategy_performance, confidence_distribution
+    perf, dist = await asyncio.gather(
+        strategy_performance(days),
+        confidence_distribution(days),
+    )
+    return {"strategy_performance": perf, "confidence_distribution": dist}
+
+
+@app.get("/api/v1/analytics/revenue-impact")
+async def analytics_revenue_impact(
+    from_version: str = Query(alias="from"),
+    to_version:   str = Query(alias="to"),
+):
+    from analytics.revenue_model import revenue_impact
+    return await revenue_impact(from_version, to_version)
+
+
+# ── Rule Editor API (Task 4.2) ────────────────────────────────────────────────
+
+@app.get("/api/v1/strategies/{version}/rules")
+async def get_strategy_rules(version: str):
+    """Return the raw YAML rule files for the given strategy version."""
+    import yaml
+    from pathlib import Path
+
+    strategies_dir = Path(__file__).parent / settings.strategies_dir / version
+    if not strategies_dir.exists():
+        raise HTTPException(404, f"Strategy version '{version}' not found on disk")
+
+    rule_files = ["credit_rules", "fraud_rules", "policy_rules", "synthesis_weights", "metadata"]
+    result = {}
+    for name in rule_files:
+        fp = strategies_dir / f"{name}.yaml"
+        if fp.exists():
+            result[name] = yaml.safe_load(fp.read_text())
+    return result
+
+
+class RuleUpdateRequest(BaseModel):
+    rule_file: str    # credit_rules | fraud_rules | policy_rules | synthesis_weights
+    content: dict     # updated rule content as parsed object
+
+
+@app.put("/api/v1/strategies/{version}/rules")
+async def update_strategy_rules(version: str, body: RuleUpdateRequest):
+    """
+    Write an updated rule file to an EXISTING strategy directory.
+    Clears the rules engine cache so the change is picked up immediately.
+    Does NOT create a new version — use POST /api/v1/strategies/deploy for that.
+    """
+    import yaml
+    from pathlib import Path
+
+    allowed = {"credit_rules", "fraud_rules", "policy_rules", "synthesis_weights"}
+    if body.rule_file not in allowed:
+        raise HTTPException(400, f"rule_file must be one of: {allowed}")
+
+    strategies_dir = Path(__file__).parent / settings.strategies_dir / version
+    if not strategies_dir.exists():
+        raise HTTPException(404, f"Strategy version '{version}' not found on disk")
+
+    fp = strategies_dir / f"{body.rule_file}.yaml"
+    fp.write_text(yaml.dump(body.content, default_flow_style=False))
+
+    # Invalidate cached rules engine so next request picks up the change
+    from rules.engine import get_rules_engine, get_challenger_engine
+    get_rules_engine.cache_clear()
+    try:
+        get_challenger_engine.cache_clear()
+    except Exception:
+        pass
+
+    logger.info("rule_file_updated", version=version, rule_file=body.rule_file)
+    return {"status": "updated", "version": version, "rule_file": body.rule_file}
+
+
+class DeployStrategyRequest(BaseModel):
+    source_version: str       # copy rules from this version
+    new_version: str          # name for the new version (e.g. "v1.2.0")
+    changelog: list[str] = [] # human-readable change notes
+
+
+@app.post("/api/v1/strategies/deploy", status_code=202)
+async def deploy_strategy(body: DeployStrategyRequest):
+    """
+    Create a new versioned strategy directory by copying source_version's rules,
+    register it in the DB, run a quick simulation (dry-run) to validate no
+    regression, and activate it.
+    """
+    import shutil
+    from pathlib import Path
+
+    strategies_dir = Path(__file__).parent / settings.strategies_dir
+    src = strategies_dir / body.source_version
+    dst = strategies_dir / body.new_version
+
+    if not src.exists():
+        raise HTTPException(404, f"Source version '{body.source_version}' not found")
+    if dst.exists():
+        raise HTTPException(409, f"Version '{body.new_version}' already exists")
+
+    shutil.copytree(str(src), str(dst))
+
+    # Update metadata.yaml in new version
+    import yaml
+    meta_fp = dst / "metadata.yaml"
+    meta = yaml.safe_load(meta_fp.read_text()) if meta_fp.exists() else {}
+    from datetime import datetime as _dt, timezone as _tz
+    meta.update({
+        "version":        body.new_version,
+        "effective_date": _dt.now(_tz.utc).strftime("%Y-%m-%d"),
+        "changelog":      body.changelog,
+    })
+    meta_fp.write_text(yaml.dump(meta, default_flow_style=False))
+
+    # Register in DB
+    async with get_session() as session:
+        reg = StrategyRegistry(session)
+        from strategy.manager import take_snapshot
+        snapshot = take_snapshot(body.new_version)
+        await reg.register(
+            version=body.new_version,
+            snapshot=snapshot,
+            changelog=body.changelog,
+        )
+
+    logger.info("strategy_deployed", new_version=body.new_version, source=body.source_version)
+    return {
+        "status": "deployed",
+        "new_version": body.new_version,
+        "source_version": body.source_version,
+        "message": f"Strategy {body.new_version} created. Activate via PUT /api/v1/strategies/{body.new_version}/activate",
+    }
+
+
+@app.put("/api/v1/strategies/{version}/activate")
+async def activate_strategy(version: str):
+    """Switch the active champion strategy to the given version."""
+    async with get_session() as session:
+        reg = StrategyRegistry(session)
+        record = await reg.get_by_version(version)
+        if not record:
+            raise HTTPException(404, f"Strategy '{version}' not in registry")
+        await reg.set_active(version)
+
+    from rules.engine import get_rules_engine
+    get_rules_engine.cache_clear()
+    logger.info("strategy_activated", version=version)
+    return {"status": "activated", "version": version}

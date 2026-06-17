@@ -1,0 +1,87 @@
+[
+  {
+    "id": "GD-LR-001",
+    "description": "Increase: excellent payment history, productive utilization",
+    "input": {
+      "customerId": "CUST-001",
+      "currentCreditLimit": 10000,
+      "accountAgeMonths": 24,
+      "recentUtilizationAvg": 55.0,
+      "paymentsMadeOnTime": 12,
+      "paymentsCounted": 12,
+      "missedPayments": 0,
+      "currentBalance": 5500
+    },
+    "profile": {"payment_consistency_score": 1.0, "utilization_trend_3m": [50.0, 53.0, 55.0], "estimated_clv": 2400},
+    "expected_recommendation": "INCREASE",
+    "notes": "100% payment rate, 24 months tenure, utilization in productive range (30-80%)"
+  },
+  {
+    "id": "GD-LR-002",
+    "description": "Maintain: new account, insufficient history",
+    "input": {
+      "customerId": "CUST-002",
+      "currentCreditLimit": 5000,
+      "accountAgeMonths": 8,
+      "recentUtilizationAvg": 42.0,
+      "paymentsMadeOnTime": 7,
+      "paymentsCounted": 8,
+      "missedPayments": 0,
+      "currentBalance": 2100
+    },
+    "profile": {"payment_consistency_score": 0.875, "utilization_trend_3m": [38.0, 41.0, 42.0], "estimated_clv": 1500},
+    "expected_recommendation": "MAINTAIN",
+    "notes": "Good but account_age < 12 months criterion not met"
+  },
+  {
+    "id": "GD-LR-003",
+    "description": "Decrease: multiple missed payments",
+    "input": {
+      "customerId": "CUST-003",
+      "currentCreditLimit": 8000,
+      "accountAgeMonths": 18,
+      "recentUtilizationAvg": 88.0,
+      "paymentsMadeOnTime": 9,
+      "paymentsCounted": 12,
+      "missedPayments": 3,
+      "currentBalance": 7040
+    },
+    "profile": {"payment_consistency_score": 0.4, "utilization_trend_3m": [80.0, 85.0, 88.0], "estimated_clv": 300},
+    "expected_recommendation": "DECREASE",
+    "notes": "3 missed payments, utilization > 90% of limit — over-extended, risk reduction needed"
+  },
+  {
+    "id": "GD-LR-004",
+    "description": "Increase boundary: exactly 95% payment rate, 12 months",
+    "input": {
+      "customerId": "CUST-004",
+      "currentCreditLimit": 6000,
+      "accountAgeMonths": 12,
+      "recentUtilizationAvg": 65.0,
+      "paymentsMadeOnTime": 11,
+      "paymentsCounted": 12,
+      "missedPayments": 1,
+      "currentBalance": 3900
+    },
+    "profile": {"payment_consistency_score": 0.917, "utilization_trend_3m": [60.0, 63.0, 65.0], "estimated_clv": 1800},
+    "expected_recommendation": "MAINTAIN",
+    "notes": "91.7% rate (1 missed) — just below 95% threshold; borderline maintain"
+  },
+  {
+    "id": "GD-LR-005",
+    "description": "Decrease: utilization > 90% sustained",
+    "input": {
+      "customerId": "CUST-005",
+      "currentCreditLimit": 12000,
+      "accountAgeMonths": 36,
+      "recentUtilizationAvg": 93.0,
+      "paymentsMadeOnTime": 11,
+      "paymentsCounted": 12,
+      "missedPayments": 1,
+      "currentBalance": 11160
+    },
+    "profile": {"payment_consistency_score": 0.7, "utilization_trend_3m": [89.0, 91.0, 93.0], "estimated_clv": 900},
+    "expected_recommendation": "DECREASE",
+    "notes": "Utilization > 90% even with mostly on-time payments signals over-extension"
+  }
+]

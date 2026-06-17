@@ -8,24 +8,40 @@ from models.events import ApplicationRequest
 
 
 class GraphState(TypedDict, total=False):
-    # Set at intake
+    # ── Routing ───────────────────────────────────────────────────────────────
     correlation_id: str
-    application: ApplicationRequest
+    decision_type: str          # ORIGINATION | LIMIT_REVIEW | DELINQUENCY_TREATMENT | CROSS_SELL
 
-    # Agent outputs (populated in parallel)
+    # ── Intake payloads (one is populated depending on decision_type) ─────────
+    application: ApplicationRequest         # ORIGINATION
+    limit_review_request: dict              # LIMIT_REVIEW
+    delinquency_request: dict              # DELINQUENCY_TREATMENT
+    cross_sell_request: dict               # CROSS_SELL
+
+    # ── Customer 360 (populated by enrichment node for all workflow types) ────
+    customer_id: str
+    customer_profile: dict                 # CustomerProfile.model_dump()
+    customer_context_version: str          # profile_version timestamp
+
+    # ── Origination agent outputs ─────────────────────────────────────────────
     credit_result: dict       # {riskLevel, reason, score}
     fraud_result: dict        # {fraudRisk, reason, indicators}
     policy_context: dict      # {rules, action, policy_applicable}
 
-    # Synthesis (populated after fan-in)
-    risk_decision: dict       # {recommendation, confidence, reasons}
+    # ── Workflow-specific outputs ─────────────────────────────────────────────
+    limit_review_result: dict  # {recommendation, suggested_change_pct, ...}
+    treatment_result: dict     # {treatment, urgency, script_key, escalation_required}
+    propensity_result: dict    # {recommended_product, propensity_score, eligible_products}
 
-    # Explainability (final node)
-    explanation: dict         # {plain_language_summary, adverse_action_codes,
-                              #  audit_narrative, policy_citations, signal_weights}
-    # Experiment routing — set by consumer before graph.invoke()
-    experiment_variant: str     # "champion" | "challenger" | ""
-    prompt_versions: dict       # populated by explainability_agent at final node
+    # ── Synthesis (all workflow types) ────────────────────────────────────────
+    risk_decision: dict       # {recommendation, confidence, reasons, strategy_version}
 
-    # Error propagation
+    # ── Explainability (final node for all workflow types) ────────────────────
+    explanation: dict
+
+    # ── Experiment routing — set by consumer before graph.invoke() ────────────
+    experiment_variant: str   # "champion" | "challenger" | ""
+    prompt_versions: dict     # populated by explainability_agent at final node
+
+    # ── Error propagation ─────────────────────────────────────────────────────
     error: Optional[str]

@@ -1,6 +1,7 @@
 """
-Policy RAG agent.
+Policy RAG agent (async).
 """
+import asyncio
 import json
 import time
 
@@ -8,14 +9,14 @@ import structlog
 
 from agents.state import GraphState
 from config import get_settings
-from llm.factory import get_llm
+from llm.factory import cached_llm_invoke
 from prompts.registry import get_prompt_registry
-from rag.retriever import QdrantRetriever
+from rag.retriever import get_retriever
 
 logger = structlog.get_logger()
 
 
-def policy_rag_agent(state: GraphState) -> dict:
+async def policy_rag_agent(state: GraphState) -> dict:
     start = time.time()
     app = state["application"]
     corr = state["correlation_id"]
@@ -30,8 +31,9 @@ def policy_rag_agent(state: GraphState) -> dict:
     )
 
     try:
-        retriever = QdrantRetriever()
-        chunks = retriever.retrieve(query, k=4)
+        retriever = get_retriever()
+        # Qdrant retrieval is blocking I/O — run in thread pool
+        chunks = await asyncio.to_thread(retriever.retrieve, query, 4)
 
         if not chunks:
             logger.warning("policy_rag_agent: no chunks retrieved", correlation_id=corr)
@@ -61,8 +63,7 @@ def policy_rag_agent(state: GraphState) -> dict:
             policy_chunks=policy_text,
         )
 
-        llm = get_llm()
-        raw = llm.invoke(prompt)
+        raw = await asyncio.to_thread(cached_llm_invoke, prompt)
         result = json.loads(raw)
 
         latency = round(time.time() - start, 2)

@@ -1,0 +1,103 @@
+[
+  {
+    "id": "GD-DT-001",
+    "description": "Reminder: first missed payment, 5 DPD",
+    "input": {
+      "customerId": "CUST-001",
+      "daysPastDue": 5,
+      "amountPastDue": 250.0,
+      "currentBalance": 3200.0,
+      "currentCreditLimit": 8000.0,
+      "previousTreatments": [],
+      "contactAttempts": 0
+    },
+    "profile": {"payment_consistency_score": 0.92, "prior_applications": []},
+    "expected_treatment": "REMINDER",
+    "expected_urgency": "LOW",
+    "notes": "Early-stage, strong payment history — automated reminder is sufficient"
+  },
+  {
+    "id": "GD-DT-002",
+    "description": "Hardship program: 30 DPD, no prior treatment",
+    "input": {
+      "customerId": "CUST-002",
+      "daysPastDue": 30,
+      "amountPastDue": 890.0,
+      "currentBalance": 5400.0,
+      "currentCreditLimit": 7000.0,
+      "previousTreatments": [],
+      "contactAttempts": 2
+    },
+    "profile": {"payment_consistency_score": 0.75, "prior_applications": []},
+    "expected_treatment": "HARDSHIP_PROGRAM",
+    "expected_urgency": "MEDIUM",
+    "notes": "15-60 DPD band; no prior treatment — hardship engagement appropriate"
+  },
+  {
+    "id": "GD-DT-003",
+    "description": "Collections referral: 75 DPD",
+    "input": {
+      "customerId": "CUST-003",
+      "daysPastDue": 75,
+      "amountPastDue": 2100.0,
+      "currentBalance": 9800.0,
+      "currentCreditLimit": 10000.0,
+      "previousTreatments": ["REMINDER", "HARDSHIP_PROGRAM"],
+      "contactAttempts": 6
+    },
+    "profile": {"payment_consistency_score": 0.3, "prior_applications": []},
+    "expected_treatment": "COLLECTIONS_REFERRAL",
+    "expected_urgency": "HIGH",
+    "notes": "60+ DPD, both prior treatments exhausted — collections referral enforced by DPD floor"
+  },
+  {
+    "id": "GD-DT-004",
+    "description": "Hardship escalation: reminder already attempted, 25 DPD",
+    "input": {
+      "customerId": "CUST-004",
+      "daysPastDue": 25,
+      "amountPastDue": 420.0,
+      "currentBalance": 4200.0,
+      "currentCreditLimit": 6000.0,
+      "previousTreatments": ["REMINDER"],
+      "contactAttempts": 3
+    },
+    "profile": {"payment_consistency_score": 0.65, "prior_applications": []},
+    "expected_treatment": "HARDSHIP_PROGRAM",
+    "expected_urgency": "MEDIUM",
+    "notes": "Prior REMINDER didn't work; DPD in 15-60 band → escalate to hardship"
+  },
+  {
+    "id": "GD-DT-005",
+    "description": "DPD floor enforcement: LLM might suggest REMINDER but DPD=65 forces COLLECTIONS",
+    "input": {
+      "customerId": "CUST-005",
+      "daysPastDue": 65,
+      "amountPastDue": 1800.0,
+      "currentBalance": 8900.0,
+      "currentCreditLimit": 10000.0,
+      "previousTreatments": [],
+      "contactAttempts": 1
+    },
+    "profile": {"payment_consistency_score": 0.5, "prior_applications": []},
+    "expected_treatment": "COLLECTIONS_REFERRAL",
+    "notes": "DPD floor rule must override LLM — 65 DPD >= 60 threshold regardless of prior history"
+  },
+  {
+    "id": "GD-DT-006",
+    "description": "Contact exhaustion: 5 attempts with no response at 40 DPD",
+    "input": {
+      "customerId": "CUST-006",
+      "daysPastDue": 40,
+      "amountPastDue": 650.0,
+      "currentBalance": 3100.0,
+      "currentCreditLimit": 5000.0,
+      "previousTreatments": ["REMINDER"],
+      "contactAttempts": 5
+    },
+    "profile": {"payment_consistency_score": 0.6, "prior_applications": []},
+    "expected_treatment": "HARDSHIP_PROGRAM",
+    "expected_urgency": "HIGH",
+    "notes": "40 DPD in hardship band; 5 contact attempts warrants urgent hardship escalation"
+  }
+]

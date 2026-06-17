@@ -1,0 +1,98 @@
+[
+  {
+    "id": "GD-CS-001",
+    "description": "Rewards upgrade: high spender, loyal, excellent consistency",
+    "input": {
+      "customerId": "CUST-001",
+      "monthsOnBook": 18,
+      "averageMonthlyBalance": 3800.0,
+      "currentProduct": "BASIC_CARD",
+      "triggerReason": "SPEND_PATTERN",
+      "rewardPointsBalance": 12000,
+      "annualSpend": 22000.0
+    },
+    "profile": {"payment_consistency_score": 0.97, "estimated_clv": 8500, "prior_applications": []},
+    "expected_recommendation": "REWARDS_UPGRADE",
+    "notes": "All criteria met: consistency>=0.90, months>=12, points>=5000, spend>=15000"
+  },
+  {
+    "id": "GD-CS-002",
+    "description": "Balance transfer: good consistency, high balance, moderate tenure",
+    "input": {
+      "customerId": "CUST-002",
+      "monthsOnBook": 9,
+      "averageMonthlyBalance": 4200.0,
+      "currentProduct": "BASIC_CARD",
+      "triggerReason": "SPEND_PATTERN",
+      "rewardPointsBalance": 1500,
+      "annualSpend": 14000.0
+    },
+    "profile": {"payment_consistency_score": 0.88, "estimated_clv": 3200, "prior_applications": []},
+    "expected_recommendation": "BALANCE_TRANSFER_CARD",
+    "notes": "Consistency>=0.85, months>=6, spend>=10000 — balance transfer criteria met"
+  },
+  {
+    "id": "GD-CS-003",
+    "description": "No cross-sell: poor consistency, recent customer",
+    "input": {
+      "customerId": "CUST-003",
+      "monthsOnBook": 4,
+      "averageMonthlyBalance": 800.0,
+      "currentProduct": "SECURED_CARD",
+      "triggerReason": "TENURE",
+      "rewardPointsBalance": 200,
+      "annualSpend": 3500.0
+    },
+    "profile": {"payment_consistency_score": 0.5, "estimated_clv": 400, "prior_applications": []},
+    "expected_recommendation": "NONE",
+    "notes": "Too new, poor consistency — no product qualifies, propensity_score expected < 0.4"
+  },
+  {
+    "id": "GD-CS-004",
+    "description": "Secured card upgrade: graduated consistency, 6+ months",
+    "input": {
+      "customerId": "CUST-004",
+      "monthsOnBook": 8,
+      "averageMonthlyBalance": 1200.0,
+      "currentProduct": "SECURED_CARD",
+      "triggerReason": "TENURE",
+      "rewardPointsBalance": 800,
+      "annualSpend": 6000.0
+    },
+    "profile": {"payment_consistency_score": 0.83, "estimated_clv": 1200, "prior_applications": []},
+    "expected_recommendation": "SECURED_CARD_UPGRADE",
+    "notes": "Secured card graduation path: consistency>=0.70, months>=6"
+  },
+  {
+    "id": "GD-CS-005",
+    "description": "Personal loan: established customer with liquidity need",
+    "input": {
+      "customerId": "CUST-005",
+      "monthsOnBook": 24,
+      "averageMonthlyBalance": 5500.0,
+      "currentProduct": "REWARDS_CARD",
+      "triggerReason": "LIMIT_INCREASE",
+      "rewardPointsBalance": 4000,
+      "annualSpend": 9000.0
+    },
+    "profile": {"payment_consistency_score": 0.85, "estimated_clv": 6000, "prior_applications": []},
+    "expected_recommendation": "PERSONAL_LOAN",
+    "notes": "Consistent for 24 months, high balance — signals liquidity need; personal_loan criteria met"
+  },
+  {
+    "id": "GD-CS-006",
+    "description": "Bureau refresh trigger: long-tenured customer, low engagement",
+    "input": {
+      "customerId": "CUST-006",
+      "monthsOnBook": 36,
+      "averageMonthlyBalance": 400.0,
+      "currentProduct": "BASIC_CARD",
+      "triggerReason": "BUREAU_REFRESH",
+      "rewardPointsBalance": 600,
+      "annualSpend": 2500.0
+    },
+    "profile": {"payment_consistency_score": 0.92, "estimated_clv": 1100, "prior_applications": []},
+    "expected_recommendation": "NONE",
+    "notes": "Good consistency and tenure but spend too low for any upgrade; NONE expected"
+  }
+]

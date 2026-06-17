@@ -1,5 +1,5 @@
 """
-Explainability agent.
+Explainability agent (async).
 """
 import asyncio
 import json
@@ -10,7 +10,7 @@ import structlog
 
 from agents.state import GraphState
 from config import get_settings
-from llm.factory import get_llm
+from llm.factory import cached_llm_invoke
 from prompts.registry import get_prompt_registry
 from rules.engine import get_engine_for_state
 
@@ -21,7 +21,6 @@ def _derive_adverse_codes(state: GraphState) -> list[dict]:
     app = state["application"]
     engine = get_engine_for_state(state)
 
-    # Evaluate all rule sets against this application's signals to collect ECOA codes.
     credit_matches = engine.evaluate_credit(
         app.creditScore, app.utilization, app.delinquencies or 0
     )
@@ -59,7 +58,7 @@ async def _persist_decision(audit_record: dict) -> None:
         )
 
 
-def explainability_agent(state: GraphState) -> dict:
+async def explainability_agent(state: GraphState) -> dict:
     start = time.time()
     corr = state["correlation_id"]
     decision = state.get("risk_decision", {})
@@ -71,7 +70,7 @@ def explainability_agent(state: GraphState) -> dict:
     )
 
     credit = state.get("credit_result", {})
-    fraud = state.get("fraud_result", {})
+    fraud  = state.get("fraud_result", {})
     policy = state.get("policy_context", {})
 
     settings = get_settings()
@@ -87,8 +86,7 @@ def explainability_agent(state: GraphState) -> dict:
     )
 
     try:
-        llm = get_llm()
-        raw = llm.invoke(prompt)
+        raw = await asyncio.to_thread(cached_llm_invoke, prompt)
         llm_result = json.loads(raw)
     except Exception as exc:
         logger.error(
@@ -102,7 +100,11 @@ def explainability_agent(state: GraphState) -> dict:
             "recommended_next_steps": "Contact customer service.",
         }
 
-    adverse_codes = _derive_adverse_codes(state)
+    # ECOA adverse action codes only apply to origination decisions
+    if state.get("decision_type", "ORIGINATION") == "ORIGINATION":
+        adverse_codes = _derive_adverse_codes(state)
+    else:
+        adverse_codes = []
 
     explanation = {
         **llm_result,
@@ -112,41 +114,41 @@ def explainability_agent(state: GraphState) -> dict:
     }
 
     prompt_versions = {
-        "credit_agent": settings.credit_agent_prompt_version,
-        "fraud_agent": settings.fraud_agent_prompt_version,
-        "policy_rag_agent": settings.policy_rag_agent_prompt_version,
-        "explainability_agent": settings.explainability_agent_prompt_version,
+        "credit_agent":          settings.credit_agent_prompt_version,
+        "fraud_agent":           settings.fraud_agent_prompt_version,
+        "policy_rag_agent":      settings.policy_rag_agent_prompt_version,
+        "explainability_agent":  settings.explainability_agent_prompt_version,
+        "limit_review_agent":    settings.limit_review_agent_prompt_version,
+        "treatment_agent":       settings.treatment_agent_prompt_version,
+        "propensity_agent":      settings.propensity_agent_prompt_version,
     }
+
+    decision_type = state.get("decision_type", "ORIGINATION")
+    app = state.get("application")
 
     audit_record = {
-        "correlation_id": corr,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "recommendation": decision.get("recommendation"),
-        "confidence": decision.get("confidence"),
-        "composite_score": decision.get("composite_score", 0.0),
-        "strategy_version": decision.get("strategy_version", get_engine_for_state(state).strategy_version),
-        "experiment_variant": state.get("experiment_variant", ""),
-        "prompt_versions": prompt_versions,
-        "application": state["application"].model_dump(),
-        "credit_result": credit,
-        "fraud_result": fraud,
-        "policy_context": policy,
-        "risk_decision": decision,
-        "explanation": explanation,
+        "correlation_id":          corr,
+        "timestamp":               datetime.now(timezone.utc).isoformat(),
+        "decision_type":           decision_type,
+        "recommendation":          decision.get("recommendation"),
+        "confidence":              decision.get("confidence"),
+        "composite_score":         decision.get("composite_score", 0.0),
+        "strategy_version":        decision.get("strategy_version", get_engine_for_state(state).strategy_version),
+        "experiment_variant":      state.get("experiment_variant", ""),
+        "prompt_versions":         prompt_versions,
+        "customer_id":             state.get("customer_id") or (getattr(app, "customerId", None) if app else None),
+        "customer_context_version": state.get("customer_context_version"),
+        "customer_profile":        state.get("customer_profile"),
+        "application":             app.model_dump() if app else {},
+        "credit_result":           credit,
+        "fraud_result":            fraud,
+        "policy_context":          policy,
+        "risk_decision":           decision,
+        "explanation":             explanation,
     }
 
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(_persist_decision(audit_record))
-        else:
-            loop.run_until_complete(_persist_decision(audit_record))
-    except Exception as exc:
-        logger.error(
-            "explainability_agent persist dispatch failed",
-            correlation_id=corr,
-            error_type=type(exc).__name__,
-        )
+    # Fully async now — no event loop gymnastics needed
+    await _persist_decision(audit_record)
 
     latency = round(time.time() - start, 2)
     logger.info(

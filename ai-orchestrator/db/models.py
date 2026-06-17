@@ -51,6 +51,16 @@ class Decision(Base):
     # Audit trail: which prompt version each agent used
     prompt_versions_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Workflow type — determines which agents ran
+    decision_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="ORIGINATION", server_default="ORIGINATION", index=True
+    )
+
+    # Customer 360 context (nullable — NULL for anonymous / new applications)
+    customer_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    customer_context_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    customer_context_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     # Relationships
     agent_outputs: Mapped[list["AgentOutput"]] = relationship(back_populates="decision", cascade="all, delete-orphan")
     adverse_actions: Mapped[list["AdverseAction"]] = relationship(back_populates="decision", cascade="all, delete-orphan")
@@ -144,3 +154,46 @@ class Simulation(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, server_default=func.now())
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DecisionOutcome(Base):
+    """
+    Outcome event joined to an original decision.
+
+    Populated by learning/outcome_consumer.py from three Kafka topics:
+      outcome.account_default, outcome.fraud_confirmed, outcome.early_payoff
+    """
+    __tablename__ = "decision_outcomes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    correlation_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, index=True,
+    )
+    outcome_type: Mapped[str] = mapped_column(
+        String(32), nullable=False,
+    )  # ACCOUNT_DEFAULT | FRAUD_CONFIRMED | EARLY_PAYOFF
+    outcome_date: Mapped[str] = mapped_column(String(32), nullable=False)
+    months_on_books: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    original_recommendation: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    original_confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    consumed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, server_default=func.now())
+
+
+class FairnessReport(Base):
+    """
+    Monthly fairness analysis snapshot.
+
+    Written by governance/fairness_monitor.py and served via
+    GET /api/v1/governance/fairness/latest.
+    """
+    __tablename__ = "fairness_reports"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    report_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    period_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_decisions: Mapped[int] = mapped_column(Integer, nullable=False)
+    overall_approval_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    violations_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
+    violations_json: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    report_html: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, server_default=func.now())

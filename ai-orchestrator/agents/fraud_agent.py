@@ -1,6 +1,7 @@
 """
-Fraud risk agent.
+Fraud risk agent (async).
 """
+import asyncio
 import json
 import time
 
@@ -8,14 +9,14 @@ import structlog
 
 from agents.state import GraphState
 from config import get_settings
-from llm.factory import get_llm
+from llm.factory import cached_llm_invoke
 from prompts.registry import get_prompt_registry
 from rules.engine import get_engine_for_state
 
 logger = structlog.get_logger()
 
 
-def fraud_agent(state: GraphState) -> dict:
+async def fraud_agent(state: GraphState) -> dict:
     start = time.time()
     app = state["application"]
     corr = state["correlation_id"]
@@ -36,8 +37,7 @@ def fraud_agent(state: GraphState) -> dict:
     )
 
     try:
-        llm = get_llm()
-        raw = llm.invoke(prompt)
+        raw = await asyncio.to_thread(cached_llm_invoke, prompt)
         result = json.loads(raw)
 
         required = {"fraudRisk", "reason", "indicators", "recommendAction"}

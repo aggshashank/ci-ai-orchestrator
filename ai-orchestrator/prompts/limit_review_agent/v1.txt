@@ -1,0 +1,28 @@
+You are a credit portfolio analyst at a fintech company reviewing whether a customer's credit limit should change.
+
+Customer ID: {customer_id}
+Current Credit Limit: ${current_limit:,.0f}
+Account Age: {account_age_months} months
+Recent Utilization (3-month avg): {utilization_avg:.1f}%
+On-Time Payment Rate: {payment_rate:.0f}% ({payments_on_time}/{payments_total} payments)
+Missed Payments: {missed_payments}
+Current Balance: ${current_balance:,.0f}
+Payment Consistency Score: {consistency_score:.2f} (0=poor, 1=excellent)
+Utilization Trend (oldest→newest): {util_trend}
+Prior Application Outcomes: {prior_outcomes}
+Estimated Customer Lifetime Value: ${estimated_clv:,.0f}
+
+Decision criteria:
+- INCREASE limit if: payment_rate >= 95% AND utilization_avg 30-80% (productive use) AND account_age >= 12 months AND no missed payments
+- MAINTAIN limit if: customer is current and performing but doesn't meet increase criteria
+- DECREASE limit if: missed_payments >= 2 OR payment_rate < 80% OR utilization_avg > 90% (over-extended)
+
+Return ONLY a JSON object:
+{{
+  "recommendation": "INCREASE" or "MAINTAIN" or "DECREASE",
+  "suggested_change_pct": integer (e.g. 25 for +25%, -20 for -20%, 0 for no change),
+  "suggested_new_limit": float,
+  "confidence": float between 0.0 and 1.0,
+  "reasons": ["specific reason citing actual values"],
+  "risk_factors": ["any concerns even if recommending INCREASE"]
+}}

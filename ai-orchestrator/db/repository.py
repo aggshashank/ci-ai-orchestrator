@@ -47,6 +47,10 @@ class DecisionRepository:
             application_json=payload.get("application", {}),
             experiment_variant=payload.get("experiment_variant") or None,
             prompt_versions_json=payload.get("prompt_versions") or None,
+            decision_type=payload.get("decision_type", "ORIGINATION"),
+            customer_id=payload.get("customer_id") or None,
+            customer_context_version=payload.get("customer_context_version") or None,
+            customer_context_json=payload.get("customer_profile") or None,
         )
         self._s.add(decision)
         await self._s.flush()  # populate decision.id before children
