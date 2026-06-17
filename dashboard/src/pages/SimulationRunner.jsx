@@ -2,19 +2,18 @@ import React, { useState } from 'react'
 import MetricCard from '../components/MetricCard'
 import { createSimulation, getSimulation } from '../api/client'
 
-const WORKFLOWS = ['ORIGINATION', 'DELINQUENCY', 'LIMIT_REVIEW', 'CROSS_SELL']
+const DATE_RANGES = ['last_7_days', 'last_30_days', 'last_90_days', 'all']
 
 export default function SimulationRunner() {
   const [form, setForm] = useState({
-    workflow_type: 'ORIGINATION',
     strategy_version: 'v1.0.0',
-    dataset_name: 'golden_origination',
-    num_cases: 100,
+    sample_size: 100,
+    date_range: 'last_90_days',
   })
   const [result, setResult] = useState(null)
+  const [simId, setSimId]   = useState(null)
   const [running, setRunning] = useState(false)
   const [error, setError] = useState(null)
-  const [pollId, setPollId] = useState(null)
 
   async function run() {
     setRunning(true)
@@ -23,17 +22,17 @@ export default function SimulationRunner() {
     try {
       const sim = await createSimulation(form)
       const id = sim.simulation_id
-      setPollId(id)
+      setSimId(id)
 
       // Poll until complete (max 60s)
       let attempts = 0
       const check = async () => {
         const data = await getSimulation(id)
-        if (data.status === 'COMPLETED') {
+        if (data.status === 'complete') {
           setResult(data)
           setRunning(false)
-        } else if (data.status === 'FAILED') {
-          setError(`Simulation failed: ${data.error || 'unknown'}`)
+        } else if (data.status === 'failed') {
+          setError(`Simulation failed: ${data.error_message || 'unknown'}`)
           setRunning(false)
         } else if (++attempts < 30) {
           setTimeout(check, 2000)
@@ -49,12 +48,16 @@ export default function SimulationRunner() {
     }
   }
 
-  const metrics = result?.metrics ?? {}
+  const baseline  = result?.baseline_distribution ?? {}
+  const simulated = result?.simulated_distribution ?? {}
+  const approvalRate = simulated.total > 0
+    ? ((simulated.APPROVE ?? 0) / simulated.total * 100).toFixed(1) + '%'
+    : '—'
 
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Simulation Runner</h1>
-      <p className="text-gray-500 text-sm mb-6">Run strategy versions against golden datasets to measure impact before deployment.</p>
+      <p className="text-gray-500 text-sm mb-6">Re-score historical decisions under a new strategy version to measure impact before deployment.</p>
 
       {error && <div className="bg-red-50 text-red-700 px-4 py-2 rounded mb-4 text-sm">{error}</div>}
 
@@ -64,30 +67,24 @@ export default function SimulationRunner() {
           <h2 className="font-semibold mb-4">Configuration</h2>
           <div className="space-y-3">
             <label className="block text-sm">
-              <span className="text-gray-700 font-medium">Workflow</span>
-              <select value={form.workflow_type}
-                onChange={e => setForm(f => ({...f, workflow_type: e.target.value}))}
-                className="mt-1 block w-full border rounded px-2 py-1.5 text-sm">
-                {WORKFLOWS.map(w => <option key={w}>{w}</option>)}
-              </select>
-            </label>
-            <label className="block text-sm">
               <span className="text-gray-700 font-medium">Strategy Version</span>
               <input value={form.strategy_version}
                 onChange={e => setForm(f => ({...f, strategy_version: e.target.value}))}
+                className="mt-1 block w-full border rounded px-2 py-1.5 text-sm font-mono" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-gray-700 font-medium">Sample Size</span>
+              <input type="number" min={1} max={5000} value={form.sample_size}
+                onChange={e => setForm(f => ({...f, sample_size: parseInt(e.target.value) || 100}))}
                 className="mt-1 block w-full border rounded px-2 py-1.5 text-sm" />
             </label>
             <label className="block text-sm">
-              <span className="text-gray-700 font-medium">Dataset</span>
-              <input value={form.dataset_name}
-                onChange={e => setForm(f => ({...f, dataset_name: e.target.value}))}
-                className="mt-1 block w-full border rounded px-2 py-1.5 text-sm" />
-            </label>
-            <label className="block text-sm">
-              <span className="text-gray-700 font-medium">Cases</span>
-              <input type="number" value={form.num_cases}
-                onChange={e => setForm(f => ({...f, num_cases: parseInt(e.target.value)}))}
-                className="mt-1 block w-full border rounded px-2 py-1.5 text-sm" />
+              <span className="text-gray-700 font-medium">Date Range</span>
+              <select value={form.date_range}
+                onChange={e => setForm(f => ({...f, date_range: e.target.value}))}
+                className="mt-1 block w-full border rounded px-2 py-1.5 text-sm">
+                {DATE_RANGES.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
+              </select>
             </label>
             <button onClick={run} disabled={running}
               className="w-full bg-brand-500 hover:bg-brand-700 disabled:opacity-50 text-white text-sm py-2 rounded-lg font-medium mt-2">
@@ -108,26 +105,44 @@ export default function SimulationRunner() {
           {result && (
             <div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <MetricCard title="Total Cases"    value={result.total_cases}   color="gray" />
-                <MetricCard title="Approval Rate"  value={metrics.approval_rate != null ? `${(metrics.approval_rate * 100).toFixed(1)}%` : '—'} color="green" />
-                <MetricCard title="Avg Confidence" value={metrics.avg_confidence != null ? `${(metrics.avg_confidence * 100).toFixed(0)}%` : '—'} color="blue" />
-                <MetricCard title="Errors"         value={result.error_count ?? 0} color={result.error_count > 0 ? 'red' : 'gray'} />
+                <MetricCard title="Cases Sampled"     value={result.sample_size}  color="gray" />
+                <MetricCard title="Simulated Approval" value={approvalRate}        color="green" />
+                <MetricCard title="Changed Decisions" value={result.changed_decisions?.length ?? 0} color="blue" />
+                <MetricCard title="P-Value"           value={result.p_value != null ? result.p_value.toFixed(4) : '—'} color={result.p_value < 0.05 ? 'red' : 'gray'} />
               </div>
-              <div className="bg-white rounded-xl border p-5">
-                <h3 className="font-semibold mb-2">Recommendation Breakdown</h3>
-                <div className="flex gap-6 text-sm">
-                  {Object.entries(metrics.by_recommendation ?? {}).map(([rec, cnt]) => (
-                    <div key={rec} className="text-center">
-                      <p className="text-2xl font-bold">{cnt}</p>
-                      <p className="text-xs text-gray-500">{rec}</p>
-                    </div>
-                  ))}
-                </div>
+              <div className="bg-white rounded-xl border p-5 mb-3">
+                <h3 className="font-semibold mb-3">Decision Distribution</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 border-b">
+                      <th className="pb-2 text-left">Recommendation</th>
+                      <th className="pb-2 text-right">Baseline</th>
+                      <th className="pb-2 text-right">Simulated</th>
+                      <th className="pb-2 text-right">Delta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {['APPROVE', 'MANUAL_REVIEW', 'DECLINE'].map(rec => {
+                      const b = baseline[rec] ?? 0
+                      const s = simulated[rec] ?? 0
+                      return (
+                        <tr key={rec} className="border-b last:border-0">
+                          <td className="py-2 font-mono text-xs">{rec}</td>
+                          <td className="py-2 text-right">{b}</td>
+                          <td className="py-2 text-right">{s}</td>
+                          <td className={`py-2 text-right font-medium ${s - b > 0 ? 'text-green-600' : s - b < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                            {s - b > 0 ? '+' : ''}{s - b}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
-              {result.report_url && (
-                <a href={`/api/v1/simulations/${result.simulation_id}/report`} target="_blank" rel="noreferrer"
-                  className="mt-3 block text-center text-brand-500 hover:text-brand-700 text-sm font-medium">
-                  View Full Report →
+              {simId && (
+                <a href={`/api/v1/simulations/${simId}/report`} target="_blank" rel="noreferrer"
+                  className="block text-center text-brand-500 hover:text-brand-700 text-sm font-medium">
+                  View Full HTML Report →
                 </a>
               )}
             </div>

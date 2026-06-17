@@ -171,8 +171,8 @@ async def _sample_decisions(request: SimulationRequest) -> list[dict[str, Any]]:
             .limit(request.sample_size)
         )
         if days is not None:
-            from sqlalchemy import func, interval  # type: ignore[attr-defined]
-            cutoff = func.now() - func.cast(f"{days} days", interval)  # type: ignore[operator]
+            from datetime import datetime, timezone, timedelta
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             stmt = stmt.where(Decision.created_at >= cutoff)
 
         result = await session.execute(stmt)

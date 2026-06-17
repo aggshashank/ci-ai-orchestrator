@@ -46,3 +46,10 @@ jsonschema>=4.22.0
 redis[hiredis]>=5.0.0
 
 # Simulation (chi-squared p-value via pure-stdlib — no extra dep needed)
+
+# SQLite async driver (used in CI tests with DATABASE_URL=sqlite+aiosqlite:///:memory:)
+aiosqlite>=0.20.0
+
+# Test runner
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

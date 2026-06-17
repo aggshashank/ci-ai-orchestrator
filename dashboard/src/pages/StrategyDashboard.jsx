@@ -26,9 +26,9 @@ export default function StrategyDashboard() {
   useEffect(() => {
     Promise.all([listStrategies(), getExperiment()])
       .then(([strats, exp]) => {
-        setStrategies(strats)
+        setStrategies(Array.isArray(strats) ? strats : [])
         setExperiment(exp)
-        const versions = strats.map(s => s.version)
+        const versions = (Array.isArray(strats) ? strats : []).map(s => s.version)
         if (versions.length >= 2) {
           setCompareFrom(versions[versions.length - 2])
           setCompareTo(versions[versions.length - 1])
@@ -48,8 +48,8 @@ export default function StrategyDashboard() {
     }
   }
 
-  const champion   = strategies.find(s => s.status === 'champion')
-  const challenger = strategies.find(s => s.status === 'challenger')
+  const champion   = strategies.find(s => s.is_active === true)
+  const challenger = experiment?.experiment_enabled ? strategies.find(s => s.version === experiment.challenger_strategy) : null
 
   return (
     <div>
@@ -70,7 +70,7 @@ export default function StrategyDashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MetricCard title="Champion Version" value={champion?.version ?? '—'} color="green" loading={loading} />
         <MetricCard title="Challenger Version" value={challenger?.version ?? 'None'} color="blue" loading={loading} />
-        <MetricCard title="Experiment Traffic" value={experiment ? `${experiment.challenger_traffic_pct ?? 0}%` : '—'} sub="to challenger" color="yellow" loading={loading} />
+        <MetricCard title="Experiment Traffic" value={experiment ? `${experiment.challenger_percentage ?? 0}%` : '—'} sub="to challenger" color="yellow" loading={loading} />
         <MetricCard title="Total Strategies" value={strategies.length} color="gray" loading={loading} />
       </div>
 
@@ -90,7 +90,7 @@ export default function StrategyDashboard() {
               {strategies.map(s => (
                 <tr key={s.version} className="border-b last:border-0 hover:bg-gray-50">
                   <td className="py-2.5 font-mono text-xs">{s.version}</td>
-                  <td className="py-2.5"><Badge status={s.status} /></td>
+                  <td className="py-2.5"><Badge status={s.is_active ? 'champion' : 'archived'} /></td>
                   <td className="py-2.5 text-gray-500 text-xs">{s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}</td>
                 </tr>
               ))}

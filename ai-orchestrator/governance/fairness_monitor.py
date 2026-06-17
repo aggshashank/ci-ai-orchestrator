@@ -60,26 +60,41 @@ async def run_fairness_check(
     return {
         "period_days":         result.period_days,
         "total_decisions":     result.total_decisions,
-        "overall_rate":        result.overall_approval_rate,
+        "overall_approval_rate": result.overall_approval_rate,
         "threshold":           result.threshold,
         "segments_analysed":   len(result.segments),
-        "violations":          len(result.violations),
-        "violation_details": [
+        "violations_count":    len(result.violations),
+        "segments": [
             {
-                "segment":       v.segment_name,
-                "value":         v.segment_value,
-                "approval_rate": v.approval_rate,
-                "ratio":         v.ratio_to_best,
+                "segment_name":   s.segment_name,
+                "segment_value":  s.segment_value,
+                "total_decisions": s.total_decisions,
+                "approval_rate":  s.approval_rate,
+                "ratio_to_best":  s.ratio_to_best,
+                "violation":      s.violation,
             }
-            for v in result.violations
+            for s in result.segments
         ],
         "computed_at": result.computed_at,
     }
 
 
 async def _persist_report(result, report_html: str) -> None:
+    import json as _json
     from db.session import get_session
     from sqlalchemy import text
+
+    segments_data = _json.dumps([
+        {
+            "segment_name":    s.segment_name,
+            "segment_value":   s.segment_value,
+            "total_decisions": s.total_decisions,
+            "approval_rate":   s.approval_rate,
+            "ratio_to_best":   s.ratio_to_best,
+            "violation":       s.violation,
+        }
+        for s in result.segments
+    ])
 
     async with get_session() as session:
         await session.execute(
@@ -97,15 +112,8 @@ async def _persist_report(result, report_html: str) -> None:
                 "total_decisions":       result.total_decisions,
                 "overall_approval_rate": result.overall_approval_rate,
                 "violations_count":      len(result.violations),
-                "violations_json":       str([
-                    {
-                        "segment": v.segment_name,
-                        "value":   v.segment_value,
-                        "ratio":   v.ratio_to_best,
-                    }
-                    for v in result.violations
-                ]).replace("'", '"'),
-                "report_html": report_html,
+                "violations_json":       segments_data,
+                "report_html":           report_html,
             },
         )
         await session.commit()

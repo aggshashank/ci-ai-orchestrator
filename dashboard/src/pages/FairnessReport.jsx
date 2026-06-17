@@ -49,7 +49,7 @@ export default function FairnessReport() {
     }
   }
 
-  const segments = report?.segments ?? []
+  const segments   = report?.segments ?? []
   const violations = segments.filter(s => s.violation)
 
   return (
@@ -76,7 +76,7 @@ export default function FairnessReport() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MetricCard title="Total Decisions"    value={report?.total_decisions ?? '—'} color="gray"   loading={loading} />
         <MetricCard title="Overall Approval"   value={report?.overall_approval_rate != null ? `${(report.overall_approval_rate * 100).toFixed(1)}%` : '—'} color="green" loading={loading} />
-        <MetricCard title="Violations"         value={violations.length}               color={violations.length > 0 ? 'red' : 'green'} loading={loading} />
+        <MetricCard title="Violations"         value={report?.violations_count ?? violations.length} color={violations.length > 0 ? 'red' : 'green'} loading={loading} />
         <MetricCard title="Analysis Period"    value={report ? `${report.period_days}d` : '—'} color="blue" loading={loading} />
       </div>
 

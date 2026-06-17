@@ -60,8 +60,6 @@ def get_retriever() -> QdrantRetriever:
     client = QdrantClient(
         url=settings.qdrant_url,
         timeout=settings.qdrant_timeout_seconds,
-        # httpx limits: controls the internal connection pool
-        limits=qdrant_models.models.PayloadSchemaType,  # placeholder; actual pool via httpx below
     )
     # Override httpx client pool size
     try:

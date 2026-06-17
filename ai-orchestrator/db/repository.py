@@ -55,12 +55,15 @@ class DecisionRepository:
         self._s.add(decision)
         await self._s.flush()  # populate decision.id before children
 
-        # Agent outputs
+        # Agent outputs — covers all four workflow types
         for agent_name, key in [
             ("credit_agent",        "credit_result"),
             ("fraud_agent",         "fraud_result"),
             ("policy_rag_agent",    "policy_context"),
             ("explainability_agent","explanation"),
+            ("treatment_agent",     "treatment_result"),
+            ("limit_review_agent",  "limit_review_result"),
+            ("propensity_agent",    "propensity_result"),
         ]:
             output = payload.get(key)
             if output:

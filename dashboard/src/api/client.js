@@ -14,7 +14,7 @@ async function request(path, options = {}) {
 }
 
 // Strategies
-export const listStrategies   = ()          => request('/strategies')
+export const listStrategies   = ()          => request('/strategies').then(r => r.versions ?? r)
 export const getStrategy      = (v)         => request(`/strategies/${v}`)
 export const getStrategyDiff  = (from, to)  => request(`/strategies/diff?from=${from}&to=${to}`)
 export const getStrategyRules = (v)         => request(`/strategies/${v}/rules`)

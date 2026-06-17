@@ -482,13 +482,14 @@ async def get_fairness_latest():
     if not row:
         raise HTTPException(404, "No fairness reports found — run POST /api/v1/governance/fairness/run first")
 
+    stored = row.violations_json or []
     return {
         "report_date":           row.report_date,
         "period_days":           row.period_days,
         "total_decisions":       row.total_decisions,
         "overall_approval_rate": row.overall_approval_rate,
         "violations_count":      row.violations_count,
-        "violations":            row.violations_json or [],
+        "segments":              stored,
         "created_at":            row.created_at.isoformat() if row.created_at else None,
     }
 
@@ -687,7 +688,7 @@ async def deploy_strategy(body: DeployStrategyRequest):
     async with get_session() as session:
         reg = StrategyRegistry(session)
         from strategy.manager import take_snapshot
-        snapshot = take_snapshot(body.new_version)
+        snapshot = take_snapshot()
         await reg.register(
             version=body.new_version,
             snapshot=snapshot,

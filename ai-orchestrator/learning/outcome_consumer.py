@@ -29,8 +29,9 @@ async def _store_outcome(event: dict) -> None:
     from db.session import get_session
 
     async with get_session() as session:
+        from sqlalchemy import text as _text
         result = await session.execute(
-            """
+            _text("""
             INSERT INTO decision_outcomes
                 (correlation_id, outcome_type, outcome_date, months_on_books,
                  original_recommendation, original_confidence, consumed_at)
@@ -38,7 +39,7 @@ async def _store_outcome(event: dict) -> None:
                 (:correlation_id, :outcome_type, :outcome_date, :months_on_books,
                  :original_recommendation, :original_confidence, :consumed_at)
             ON CONFLICT (correlation_id, outcome_type) DO NOTHING
-            """,
+            """),
             {
                 "correlation_id":       event["correlationId"],
                 "outcome_type":         event["outcomeType"],

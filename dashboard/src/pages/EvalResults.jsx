@@ -3,27 +3,28 @@ import MetricCard from '../components/MetricCard'
 import { createSimulation, getSimulation } from '../api/client'
 
 const EVAL_SUITES = [
-  { id: 'origination',   label: 'Origination',    dataset: 'golden_origination'   },
-  { id: 'delinquency',   label: 'Delinquency',    dataset: 'golden_delinquency'   },
-  { id: 'limit_review',  label: 'Limit Review',   dataset: 'golden_limit_review'  },
-  { id: 'cross_sell',    label: 'Cross-Sell',     dataset: 'golden_cross_sell'    },
+  { id: 'origination',           label: 'Origination'  },
+  { id: 'delinquency_treatment', label: 'Delinquency'  },
+  { id: 'limit_review',          label: 'Limit Review' },
+  { id: 'cross_sell',            label: 'Cross-Sell'   },
 ]
 
 function StatusBadge({ status }) {
   const map = {
-    PENDING:   'bg-gray-100 text-gray-600',
-    RUNNING:   'bg-blue-100 text-blue-600',
-    COMPLETED: 'bg-green-100 text-green-600',
-    FAILED:    'bg-red-100 text-red-600',
+    pending:  'bg-gray-100 text-gray-600',
+    running:  'bg-blue-100 text-blue-600',
+    complete: 'bg-green-100 text-green-600',
+    failed:   'bg-red-100 text-red-600',
+    RUNNING:  'bg-blue-100 text-blue-600',
   }
-  return <span className={`text-xs px-2 py-0.5 rounded font-medium ${map[status] ?? map.PENDING}`}>{status}</span>
+  return <span className={`text-xs px-2 py-0.5 rounded font-medium ${map[status] ?? map.pending}`}>{status}</span>
 }
 
 export default function EvalResults() {
-  const [version, setVersion]   = useState('v1.0.0')
-  const [results, setResults]   = useState({})
-  const [running, setRunning]   = useState(false)
-  const [error, setError]       = useState(null)
+  const [version, setVersion] = useState('v1.0.0')
+  const [results, setResults] = useState({})
+  const [running, setRunning] = useState(false)
+  const [error, setError]     = useState(null)
 
   async function runAllEvals() {
     setRunning(true)
@@ -36,15 +37,14 @@ export default function EvalResults() {
       await Promise.all(EVAL_SUITES.map(async suite => {
         try {
           const sim = await createSimulation({
-            workflow_type:    suite.id.toUpperCase().replace('_', '_'),
             strategy_version: version,
-            dataset_name:     suite.dataset,
-            num_cases:        50,
+            sample_size: 50,
+            date_range: 'last_90_days',
           })
           let attempts = 0
           const poll = async () => {
             const data = await getSimulation(sim.simulation_id)
-            if (data.status === 'COMPLETED' || data.status === 'FAILED' || ++attempts > 30) {
+            if (data.status === 'complete' || data.status === 'failed' || ++attempts > 30) {
               setResults(r => ({ ...r, [suite.id]: data }))
             } else {
               setTimeout(poll, 2000)
@@ -52,7 +52,7 @@ export default function EvalResults() {
           }
           await poll()
         } catch (e) {
-          setResults(r => ({ ...r, [suite.id]: { status: 'FAILED', error: e.message } }))
+          setResults(r => ({ ...r, [suite.id]: { status: 'failed', error_message: e.message } }))
         }
       }))
     } finally {
@@ -60,9 +60,12 @@ export default function EvalResults() {
     }
   }
 
-  const completed = Object.values(results).filter(r => r.status === 'COMPLETED')
+  const completed = Object.values(results).filter(r => r.status === 'complete')
   const avgApproval = completed.length
-    ? (completed.reduce((s, r) => s + (r.metrics?.approval_rate ?? 0), 0) / completed.length * 100).toFixed(1)
+    ? (completed.reduce((s, r) => {
+        const dist = r.simulated_distribution ?? {}
+        return s + (dist.total > 0 ? (dist.APPROVE ?? 0) / dist.total : 0)
+      }, 0) / completed.length * 100).toFixed(1)
     : null
 
   return (
@@ -70,7 +73,7 @@ export default function EvalResults() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">Eval Results</h1>
-          <p className="text-gray-500 text-sm">Run all golden-dataset suites against a strategy version</p>
+          <p className="text-gray-500 text-sm">Run golden-dataset suites against a strategy version</p>
         </div>
         <div className="flex gap-2 items-center">
           <input value={version} onChange={e => setVersion(e.target.value)}
@@ -85,15 +88,19 @@ export default function EvalResults() {
       {error && <div className="bg-red-50 text-red-700 px-4 py-2 rounded mb-4 text-sm">{error}</div>}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <MetricCard title="Suites"         value={EVAL_SUITES.length}             color="gray" />
-        <MetricCard title="Completed"      value={completed.length}               color="green" />
-        <MetricCard title="Failed"         value={Object.values(results).filter(r => r.status === 'FAILED').length} color="red" />
-        <MetricCard title="Avg Approval"   value={avgApproval ? `${avgApproval}%` : '—'} color="blue" />
+        <MetricCard title="Suites"    value={EVAL_SUITES.length}  color="gray" />
+        <MetricCard title="Completed" value={completed.length}    color="green" />
+        <MetricCard title="Failed"    value={Object.values(results).filter(r => r.status === 'failed').length} color="red" />
+        <MetricCard title="Avg Approval" value={avgApproval ? `${avgApproval}%` : '—'} color="blue" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {EVAL_SUITES.map(suite => {
           const r = results[suite.id]
+          const dist = r?.simulated_distribution ?? {}
+          const approvalPct = dist.total > 0
+            ? ((dist.APPROVE ?? 0) / dist.total * 100).toFixed(1) + '%'
+            : '—'
           return (
             <div key={suite.id} className="bg-white rounded-xl border p-5">
               <div className="flex justify-between items-start mb-3">
@@ -107,24 +114,24 @@ export default function EvalResults() {
                   Running…
                 </div>
               )}
-              {r?.status === 'COMPLETED' && (
+              {r?.status === 'complete' && (
                 <div className="grid grid-cols-3 gap-3 mt-2">
                   <div className="text-center">
-                    <p className="text-xl font-bold text-green-600">{r.total_cases}</p>
+                    <p className="text-xl font-bold text-green-600">{r.sample_size}</p>
                     <p className="text-xs text-gray-500">Cases</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-xl font-bold text-blue-600">{(r.metrics?.approval_rate * 100)?.toFixed(1)}%</p>
+                    <p className="text-xl font-bold text-blue-600">{approvalPct}</p>
                     <p className="text-xs text-gray-500">Approval</p>
                   </div>
                   <div className="text-center">
-                    <p className={`text-xl font-bold ${r.error_count > 0 ? 'text-red-600' : 'text-gray-700'}`}>{r.error_count ?? 0}</p>
-                    <p className="text-xs text-gray-500">Errors</p>
+                    <p className="text-xl font-bold text-gray-700">{r.changed_decisions?.length ?? 0}</p>
+                    <p className="text-xs text-gray-500">Changed</p>
                   </div>
                 </div>
               )}
-              {r?.status === 'FAILED' && (
-                <p className="text-red-600 text-sm">{r.error ?? 'Unknown error'}</p>
+              {r?.status === 'failed' && (
+                <p className="text-red-600 text-sm">{r.error_message ?? 'Unknown error'}</p>
               )}
             </div>
           )

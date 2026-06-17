@@ -10,13 +10,13 @@ export default function ExperimentManager() {
 
   useEffect(() => {
     Promise.all([getExperiment(), listStrategies()])
-      .then(([exp, strats]) => { setExperiment(exp); setStrategies(strats) })
+      .then(([exp, strats]) => { setExperiment(exp); setStrategies(Array.isArray(strats) ? strats : []) })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
-  const champion   = strategies.find(s => s.status === 'champion')
-  const challenger = strategies.find(s => s.status === 'challenger')
+  const champion   = strategies.find(s => s.is_active === true)
+  const challenger = experiment?.experiment_enabled ? strategies.find(s => s.version === experiment.challenger_strategy) : null
   const exp        = experiment
 
   function pct(n, d) { return d ? `${((n / d) * 100).toFixed(1)}%` : '—' }
@@ -33,8 +33,8 @@ export default function ExperimentManager() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MetricCard title="Champion"         value={champion?.version ?? '—'}   color="green"  loading={loading} />
         <MetricCard title="Challenger"       value={challenger?.version ?? '—'} color="blue"   loading={loading} />
-        <MetricCard title="Challenger Traffic" value={exp ? `${exp.challenger_traffic_pct ?? 0}%` : '—'} color="yellow" loading={loading} />
-        <MetricCard title="Status"           value={exp?.status ?? '—'}          color="gray"   loading={loading} />
+        <MetricCard title="Challenger Traffic" value={exp ? `${exp.challenger_percentage ?? 0}%` : '—'} color="yellow" loading={loading} />
+        <MetricCard title="Experiment"       value={exp?.experiment_enabled ? 'Active' : 'Inactive'} color="gray" loading={loading} />
       </div>
 
       {exp && (
@@ -46,10 +46,10 @@ export default function ExperimentManager() {
               <h2 className="font-semibold">Champion — {champion?.version}</h2>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <MetricCard title="Decisions"     value={exp.champion_stats?.total_decisions ?? 0}    color="gray" />
-              <MetricCard title="Approval Rate" value={rate(exp.champion_stats?.approval_rate)}      color="green" />
-              <MetricCard title="Avg Confidence" value={rate(exp.champion_stats?.avg_confidence)}   color="blue" />
-              <MetricCard title="Defaults"       value={exp.champion_stats?.default_count ?? 0}      color={exp.champion_stats?.default_count > 0 ? 'red' : 'gray'} />
+              <MetricCard title="Decisions"     value={exp.variant_stats?.champion?.total_decisions ?? 0}    color="gray" />
+              <MetricCard title="Approval Rate" value={rate(exp.variant_stats?.champion?.approval_rate)}      color="green" />
+              <MetricCard title="Avg Confidence" value={rate(exp.variant_stats?.champion?.avg_confidence)}   color="blue" />
+              <MetricCard title="Defaults"       value={exp.variant_stats?.champion?.default_count ?? 0}      color={exp.variant_stats?.champion?.default_count > 0 ? 'red' : 'gray'} />
             </div>
           </div>
 
@@ -61,10 +61,10 @@ export default function ExperimentManager() {
             </div>
             {challenger ? (
               <div className="grid grid-cols-2 gap-3">
-                <MetricCard title="Decisions"     value={exp.challenger_stats?.total_decisions ?? 0}  color="gray" />
-                <MetricCard title="Approval Rate" value={rate(exp.challenger_stats?.approval_rate)}    color="blue" />
-                <MetricCard title="Avg Confidence" value={rate(exp.challenger_stats?.avg_confidence)} color="blue" />
-                <MetricCard title="Defaults"       value={exp.challenger_stats?.default_count ?? 0}    color={exp.challenger_stats?.default_count > 0 ? 'red' : 'gray'} />
+                <MetricCard title="Decisions"     value={exp.variant_stats?.challenger?.total_decisions ?? 0}  color="gray" />
+                <MetricCard title="Approval Rate" value={rate(exp.variant_stats?.challenger?.approval_rate)}    color="blue" />
+                <MetricCard title="Avg Confidence" value={rate(exp.variant_stats?.challenger?.avg_confidence)} color="blue" />
+                <MetricCard title="Defaults"       value={exp.variant_stats?.challenger?.default_count ?? 0}    color={exp.variant_stats?.challenger?.default_count > 0 ? 'red' : 'gray'} />
               </div>
             ) : (
               <p className="text-gray-400 text-sm">No challenger strategy active.</p>
@@ -88,8 +88,8 @@ export default function ExperimentManager() {
             </thead>
             <tbody>
               {[
-                ['Approval Rate', exp.champion_stats.approval_rate, exp.challenger_stats.approval_rate],
-                ['Avg Confidence', exp.champion_stats.avg_confidence, exp.challenger_stats.avg_confidence],
+                ['Approval Rate', exp.variant_stats?.champion.approval_rate, exp.variant_stats?.challenger.approval_rate],
+                ['Avg Confidence', exp.variant_stats?.champion.avg_confidence, exp.variant_stats?.challenger.avg_confidence],
               ].map(([label, c, ch]) => {
                 const delta = ((ch ?? 0) - (c ?? 0)) * 100
                 return (
